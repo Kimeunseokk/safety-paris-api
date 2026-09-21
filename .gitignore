@@ -5,6 +5,10 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+## 환경설정 ##
+src/test/resources/application.yml
+.env
+
 ### STS ###
 .apt_generated
 .classpath
