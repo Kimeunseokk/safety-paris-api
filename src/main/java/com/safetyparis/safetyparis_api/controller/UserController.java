@@ -3,6 +3,7 @@ package com.safetyparis.safetyparis_api.controller;
 import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserResponseDto;
 import com.safetyparis.safetyparis_api.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,7 +21,7 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping
-    public ResponseEntity<UserResponseDto> createUser(@RequestBody UserSignUpRequestDto requestDto) {
+    public ResponseEntity<UserResponseDto> createUser(@RequestBody @Valid UserSignUpRequestDto requestDto) {
         return ResponseEntity.ok(userService.signUpUser(requestDto));
     }
 
