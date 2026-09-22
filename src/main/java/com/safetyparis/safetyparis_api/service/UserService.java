@@ -1,0 +1,32 @@
+package com.safetyparis.safetyparis_api.service;
+
+import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
+import com.safetyparis.safetyparis_api.dto.UserResponseDto;
+import com.safetyparis.safetyparis_api.entity.User;
+import com.safetyparis.safetyparis_api.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class UserService {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    @Transactional // 회원가입 기능
+    public UserResponseDto signUpUser(UserSignUpRequestDto requestDto) {
+        String encodedPassword = passwordEncoder.encode(requestDto.getPassword());
+        User savedUser = userRepository.save(requestDto.toEntity(encodedPassword));
+        return new UserResponseDto(savedUser);
+    }
+
+    public UserResponseDto getUser(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다. id=" + id));
+        return new UserResponseDto(user);
+    }
+}
