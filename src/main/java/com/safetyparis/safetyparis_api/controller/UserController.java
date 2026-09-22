@@ -1,5 +1,6 @@
 package com.safetyparis.safetyparis_api.controller;
 
+import com.safetyparis.safetyparis_api.dto.UserLoginRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserResponseDto;
 import com.safetyparis.safetyparis_api.service.UserService;
@@ -21,8 +22,12 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping
-    public ResponseEntity<UserResponseDto> createUser(@RequestBody @Valid UserSignUpRequestDto requestDto) {
+    public ResponseEntity<UserResponseDto> signupUser(@RequestBody @Valid UserSignUpRequestDto requestDto) {
         return ResponseEntity.ok(userService.signUpUser(requestDto));
+    }
+    @PostMapping("/login")
+    public ResponseEntity<UserResponseDto> loginUser(@RequestBody @Valid UserLoginRequestDto loginRequestDto) {
+        return ResponseEntity.ok(userService.login(loginRequestDto));
     }
 
     @GetMapping("/{id}")

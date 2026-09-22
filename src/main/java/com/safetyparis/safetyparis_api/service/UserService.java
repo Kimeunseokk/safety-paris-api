@@ -1,5 +1,6 @@
 package com.safetyparis.safetyparis_api.service;
 
+import com.safetyparis.safetyparis_api.dto.UserLoginRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserResponseDto;
 import com.safetyparis.safetyparis_api.entity.User;
@@ -25,6 +26,16 @@ public class UserService {
         String encodedPassword = passwordEncoder.encode(requestDto.getPassword());
         User savedUser = userRepository.save(requestDto.toEntity(encodedPassword));
         return new UserResponseDto(savedUser);
+    }
+
+    @Transactional
+    public UserResponseDto login(UserLoginRequestDto loginRequestDto) {
+        User user = userRepository.findByEmail(loginRequestDto.getEmail())
+                .orElseThrow(() -> new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요."));
+        if(!passwordEncoder.matches(loginRequestDto.getPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.");
+        }
+        return new UserResponseDto(user);
     }
 
     public UserResponseDto getUser(Long id) {
