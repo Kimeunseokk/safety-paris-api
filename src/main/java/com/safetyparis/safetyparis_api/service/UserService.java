@@ -19,6 +19,9 @@ public class UserService {
 
     @Transactional // 회원가입 기능
     public UserResponseDto signUpUser(UserSignUpRequestDto requestDto) {
+        if (userRepository.existsByEmail(requestDto.getEmail())) {
+            throw new IllegalArgumentException("이미 가입된 이메일입니다. email=" + requestDto.getEmail());
+        }
         String encodedPassword = passwordEncoder.encode(requestDto.getPassword());
         User savedUser = userRepository.save(requestDto.toEntity(encodedPassword));
         return new UserResponseDto(savedUser);

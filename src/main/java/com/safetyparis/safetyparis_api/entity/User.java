@@ -2,7 +2,6 @@ package com.safetyparis.safetyparis_api.entity;
 
 import jakarta.persistence.*;
 
-import java.time.LocalDateTime;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
