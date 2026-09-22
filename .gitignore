@@ -9,6 +9,10 @@ build/
 src/test/resources/application.yml
 .env
 
+## 기능구현 리스트, api설계 ##
+/Users/rpqhfls2whdkgmail.com/Downloads/safetyparis-api/safetyparis-api-design.md
+/Users/rpqhfls2whdkgmail.com/Downloads/safetyparis-api/safetyparis-feature-spec.md
+
 ### STS ###
 .apt_generated
 .classpath
