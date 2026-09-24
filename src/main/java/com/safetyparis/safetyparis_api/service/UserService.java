@@ -3,7 +3,10 @@ package com.safetyparis.safetyparis_api.service;
 import com.safetyparis.safetyparis_api.dto.UserLoginRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserResponseDto;
+import com.safetyparis.safetyparis_api.entity.RefreshToken;
 import com.safetyparis.safetyparis_api.entity.User;
+import com.safetyparis.safetyparis_api.jwt.JwtTokenProvider;
+import com.safetyparis.safetyparis_api.repository.RefreshTokenRepository;
 import com.safetyparis.safetyparis_api.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,6 +20,8 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     @Transactional // 회원가입 기능
     public UserResponseDto signUpUser(UserSignUpRequestDto requestDto) {
@@ -35,6 +40,13 @@ public class UserService {
         if(!passwordEncoder.matches(loginRequestDto.getPassword(), user.getPassword())) {
             throw new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요.");
         }
+        String actoken = jwtTokenProvider.createAccessToken(loginRequestDto.getEmail());
+        String rftoken = jwtTokenProvider.createRefreshToken(loginRequestDto.getEmail());
+
+        // Access Token은 매번 새로 검증되는 stateless 토큰이라 저장 안 함 - Refresh Token만 Redis에 저장
+        long expirationSeconds = jwtTokenProvider.getRefreshTokenExpiration() / 1000;
+        refreshTokenRepository.save(new RefreshToken(loginRequestDto.getEmail(), rftoken, expirationSeconds));
+
         return new UserResponseDto(user);
     }
 

@@ -16,8 +16,10 @@ spring:
       host: localhost
       port: 6379
 
-  jwt:
-    secret: ${JWT_SECRET_KEY}
+jwt:
+  secret: ${JWT_SECRET_KEY}
+  access-token-expiration: 900000
+  refresh-token-expiration: 259200000
 
 server:
   port: 8080
