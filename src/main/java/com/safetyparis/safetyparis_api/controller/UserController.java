@@ -1,5 +1,6 @@
 package com.safetyparis.safetyparis_api.controller;
 
+import com.safetyparis.safetyparis_api.dto.LoginResponseDto;
 import com.safetyparis.safetyparis_api.dto.UserLoginRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserResponseDto;
@@ -26,7 +27,7 @@ public class UserController {
         return ResponseEntity.ok(userService.signUpUser(requestDto));
     }
     @PostMapping("/login")
-    public ResponseEntity<UserResponseDto> loginUser(@RequestBody @Valid UserLoginRequestDto loginRequestDto) {
+    public ResponseEntity<LoginResponseDto> loginUser(@RequestBody @Valid UserLoginRequestDto loginRequestDto) {
         return ResponseEntity.ok(userService.login(loginRequestDto));
     }
 

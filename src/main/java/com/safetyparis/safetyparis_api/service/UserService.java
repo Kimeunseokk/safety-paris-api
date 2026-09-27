@@ -1,5 +1,6 @@
 package com.safetyparis.safetyparis_api.service;
 
+import com.safetyparis.safetyparis_api.dto.LoginResponseDto;
 import com.safetyparis.safetyparis_api.dto.UserLoginRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserResponseDto;
@@ -34,7 +35,7 @@ public class UserService {
     }
 
     @Transactional
-    public UserResponseDto login(UserLoginRequestDto loginRequestDto) {
+    public LoginResponseDto login(UserLoginRequestDto loginRequestDto) {
         User user = userRepository.findByEmail(loginRequestDto.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다. 입력한 정보를 다시 확인해 주세요."));
         if(!passwordEncoder.matches(loginRequestDto.getPassword(), user.getPassword())) {
@@ -47,7 +48,7 @@ public class UserService {
         long expirationSeconds = jwtTokenProvider.getRefreshTokenExpiration() / 1000;
         refreshTokenRepository.save(new RefreshToken(loginRequestDto.getEmail(), rftoken, expirationSeconds));
 
-        return new UserResponseDto(user);
+        return new LoginResponseDto(new UserResponseDto(user), actoken, rftoken);
     }
 
     public UserResponseDto getUser(Long id) {
