@@ -1,9 +1,6 @@
 package com.safetyparis.safetyparis_api.service;
 
-import com.safetyparis.safetyparis_api.dto.LoginResponseDto;
-import com.safetyparis.safetyparis_api.dto.UserLoginRequestDto;
-import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
-import com.safetyparis.safetyparis_api.dto.UserResponseDto;
+import com.safetyparis.safetyparis_api.dto.*;
 import com.safetyparis.safetyparis_api.entity.RefreshToken;
 import com.safetyparis.safetyparis_api.entity.User;
 import com.safetyparis.safetyparis_api.jwt.JwtTokenProvider;
@@ -49,6 +46,22 @@ public class UserService {
         refreshTokenRepository.save(new RefreshToken(loginRequestDto.getEmail(), rftoken, expirationSeconds));
 
         return new LoginResponseDto(new UserResponseDto(user), actoken, rftoken);
+    }
+
+    @Transactional // 토큰 재발급
+    public TokenResponseDto recreateAccessToken(RefreshTokenRequestDto refreshTokenRequestDto) {
+        String refreshtoken = refreshTokenRequestDto.getToken();
+        if(!jwtTokenProvider.validateToken(refreshtoken)) {
+            throw new IllegalArgumentException("유효하지 않는 토큰입니다");
+        }
+        String email = jwtTokenProvider.getEmail(refreshtoken);
+        RefreshToken savedToken = refreshTokenRepository.findById(email)
+                .orElseThrow(() -> new IllegalArgumentException("재로그인해주세요"));
+        if(!savedToken.getToken().equals(refreshtoken)) {
+            throw new IllegalArgumentException("토큰이 유효하지 않습니다.");
+        }
+        String newAccesstoken = jwtTokenProvider.createAccessToken(email);
+        return new TokenResponseDto(newAccesstoken, refreshtoken);
     }
 
     public UserResponseDto getUser(Long id) {

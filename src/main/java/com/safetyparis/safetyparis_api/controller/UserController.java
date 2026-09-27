@@ -1,6 +1,8 @@
 package com.safetyparis.safetyparis_api.controller;
 
 import com.safetyparis.safetyparis_api.dto.LoginResponseDto;
+import com.safetyparis.safetyparis_api.dto.RefreshTokenRequestDto;
+import com.safetyparis.safetyparis_api.dto.TokenResponseDto;
 import com.safetyparis.safetyparis_api.dto.UserLoginRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserSignUpRequestDto;
 import com.safetyparis.safetyparis_api.dto.UserResponseDto;
@@ -29,6 +31,11 @@ public class UserController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponseDto> loginUser(@RequestBody @Valid UserLoginRequestDto loginRequestDto) {
         return ResponseEntity.ok(userService.login(loginRequestDto));
+    }
+
+    @PostMapping("/recreate")
+    public ResponseEntity<TokenResponseDto> recreateAccessToken(@RequestBody @Valid RefreshTokenRequestDto refreshTokenRequestDto) {
+        return ResponseEntity.ok(userService.recreateAccessToken(refreshTokenRequestDto));
     }
 
     @GetMapping("/{id}")
