@@ -9,8 +9,9 @@
 - Java 21 / Spring Boot 3.3.0
 - Spring Web, Spring Data JPA
 - MySQL
-- Redis (Spring Data Redis) — 캐싱용
+- Redis (Spring Data Redis) — Refresh Token 저장 및 추후 캐싱용
 - Spring Security Crypto (BCrypt 비밀번호 암호화)
+- JWT (io.jsonwebtoken/jjwt) — Access/Refresh Token 발급·검증
 - Lombok, Bean Validation
 - spring-dotenv (`.env` 환경변수 로드)
 
@@ -42,7 +43,8 @@
 |---|---|---|---|
 | 회원가입 | POST | `/api/users` | 불필요 |
 | 로그인 | POST | `/api/users/login` | 불필요 |
-| 회원 조회 | GET | `/api/users/{id}` | 불필요 (추후 인가 필요) |
+| 토큰 재발급 | POST | `/api/users/recreate` | 불필요 (Refresh Token 제출) |
+| 회원 조회 | GET | `/api/users/{id}` | 필요 (Access Token) |
 | 마커 목록 | GET | `/api/markers` | 불필요 |
 | 마커 상세 | GET | `/api/markers/{id}` | 불필요 |
 | 제보 등록 | POST | `/api/reports` | 사용자(선택) |
@@ -57,9 +59,29 @@
 ```
 
 ### 로그인 — `POST /api/users/login`
+Request:
 ```json
 { "email": "string", "password": "string" }
 ```
+Response:
+```json
+{
+  "user": { "id": 1, "email": "string", "nickname": "string" },
+  "accessToken": "eyJhbGciOiJIUzUxMiJ9... (15분 만료)",
+  "refreshToken": "eyJhbGciOiJIUzUxMiJ9... (3일 만료, Redis에도 저장됨)"
+}
+```
+
+### 토큰 재발급 — `POST /api/users/recreate`
+Request:
+```json
+{ "token": "만료된 Access Token 대신 제출하는 Refresh Token" }
+```
+Response:
+```json
+{ "accessToken": "새로 발급된 토큰", "refreshToken": "기존 값 그대로" }
+```
+Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 일치해야만 재발급됨 (로그아웃/탈취 대응).
 
 ### 마커 상세 조회 응답 예시
 ```json
@@ -100,9 +122,11 @@
 ## 구현 현황
 
 - [x] 회원가입 (`POST /api/users`) — 이메일 중복 체크, BCrypt 비밀번호 암호화
-- [x] 로그인 (`POST /api/users/login`) — 이메일/비밀번호 검증 (토큰 발급은 미구현)
-- [x] 회원 조회 (`GET /api/users/{id}`)
-- [ ] JWT 기반 인증/인가
+- [x] 로그인 (`POST /api/users/login`) — 이메일/비밀번호 검증 + Access/Refresh Token 발급
+- [x] 토큰 재발급 (`POST /api/users/recreate`) — Refresh Token 검증 + Redis 대조
+- [x] JWT 기반 인증/인가 — `JwtAuthFilter`로 보호 경로 요청 시 토큰 검사 (`GET /api/users/{id}` 적용)
+- [x] 회원 조회 (`GET /api/users/{id}`) — 인증 필요
+- [x] `UserService`/`JwtTokenProvider`/`JwtAuthFilter` 단위 테스트 (21개, `TESTING.md` 참고)
 - [ ] HelpLocation (도움기관 CRUD)
 - [ ] Marker (지도 마커 조회)
 - [ ] Report (제보 등록 + 관리자 승인/거절)
@@ -111,7 +135,7 @@
 ## 남은 설계 고려사항
 
 - 관리자 인증: `Member`에 `role` 필드 추가 방식으로 진행 중 (별도 Admin 엔티티 분리는 미채택)
-- `GET /api/users/{id}`는 현재 인가 체크가 없어 누구나 순차 id로 다른 회원 정보를 조회 가능 (IDOR) — 로그인 인증 붙을 때 함께 처리 필요
+- `JwtAuthFilter`는 인증(로그인 여부)만 확인하고 인가(role 기반 접근 제어)는 아직 없음 — 관리자 전용 API(`/api/admin/reports/*`) 만들 때 role 검사 추가 필요
 - 마커 상세 조회 시 "다른 사용자가 임의로 수정하지 못하게" 하는 인가 로직 필요
 - 장난성 제보 필터링(관리자 거절 처리), Rate Limiting은 시간 되면 적용
 - 관리자 계정 최초 생성 방식 결정 필요 (DB 직접 삽입 vs 별도 API)
