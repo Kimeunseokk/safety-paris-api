@@ -17,13 +17,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
 
-    // 로그인 없이 접근 가능한 경로 (회원가입/로그인/토큰 재발급).
+    // 로그인 없이 접근 가능한 경로 (회원가입/로그인/토큰 재발급, 도움기관 목록 조회).
     // startsWith가 아니라 정확히 일치하는지(contains)로 비교해야 함 - startsWith였다면
     // "/api/users/5"(보호 대상)도 "/api/users"로 시작한다는 이유로 통과돼버렸을 것.
     private static final Set<String> PUBLIC_PATHS = Set.of(
             "/api/users",
             "/api/users/login",
-            "/api/users/recreate"
+            "/api/users/recreate",
+            "/api/help-locations"
     );
 
     @Override
