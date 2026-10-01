@@ -32,6 +32,8 @@ public class Marker extends BaseTimeEntity {
 
     private String gender;
 
+    private String clothing;
+
     private String race;
 
     private Integer headCount;
@@ -53,13 +55,14 @@ public class Marker extends BaseTimeEntity {
     private String storyContent;
 
     @Builder
-    public Marker(Double latitude, Double longitude, String ageGroup, String gender, String race,
+    public Marker(Double latitude, Double longitude, String ageGroup, String gender, String clothing, String race,
                   Integer headCount, String height, String build, Boolean hasBeard, Boolean hasGlasses,
                   String locationDescription, String stolenItems, String storyContent) {
         this.latitude = latitude;
         this.longitude = longitude;
         this.ageGroup = ageGroup;
         this.gender = gender;
+        this.clothing = clothing;
         this.race = race;
         this.headCount = headCount;
         this.height = height;

@@ -12,6 +12,7 @@ public class MarkerDetailResponseDto {
     private final Double longitude;
     private final String ageGroup;
     private final String gender;
+    private final String clothing;
     private final String race;
     private final Integer headCount;
     private final String height;
@@ -29,6 +30,7 @@ public class MarkerDetailResponseDto {
         this.longitude = marker.getLongitude();
         this.ageGroup = marker.getAgeGroup();
         this.gender = marker.getGender();
+        this.clothing = marker.getClothing();
         this.race = marker.getRace();
         this.headCount = marker.getHeadCount();
         this.height = marker.getHeight();

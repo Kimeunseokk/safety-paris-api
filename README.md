@@ -91,6 +91,7 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
   "longitude": 2.3522,
   "ageGroup": "20대",
   "gender": "남성",
+  "clothing": "검은 후드티, 청바지",
   "race": "백인",
   "headCount": 2,
   "height": "180cm대",
