@@ -16,6 +16,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.NoSuchElementException;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -71,7 +73,7 @@ public class UserService {
 
     public UserResponseDto getUser(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다. id=" + id));
+                .orElseThrow(() -> new NoSuchElementException("존재하지 않는 사용자입니다. id=" + id));
         return new UserResponseDto(user);
     }
 }

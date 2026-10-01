@@ -57,6 +57,17 @@ class JwtAuthFilterTest {
     }
 
     @Test
+    @DisplayName("공개 경로(마커 상세)는 id가 붙어도 토큰 검사 없이 통과시킨다")
+    void publicPath_markerDetail_passesThrough() throws Exception {
+        given(request.getRequestURI()).willReturn("/api/markers/5");
+
+        jwtAuthFilter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(jwtTokenProvider, never()).validateToken(anyString());
+    }
+
+    @Test
     @DisplayName("보호된 경로에 Authorization 헤더가 없으면 401을 응답하고 다음 단계로 넘기지 않는다")
     void protectedPath_noToken_returns401() throws Exception {
         given(request.getRequestURI()).willReturn("/api/users/5");

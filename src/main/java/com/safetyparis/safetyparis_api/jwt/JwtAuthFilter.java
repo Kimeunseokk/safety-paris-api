@@ -24,7 +24,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             "/api/users",
             "/api/users/login",
             "/api/users/recreate",
-            "/api/help-locations"
+            "/api/help-locations",
+            "/api/markers"
     );
 
     @Override
@@ -33,7 +34,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         // 이 필터는 등록된 모든 요청에 적용되므로, 나중에 Swagger/actuator 등을
         // 추가하면 그 경로들도 PUBLIC_PATHS에 넣어줘야 막히지 않음
-        if (PUBLIC_PATHS.contains(request.getRequestURI())) {
+        // 마커는 상세 조회(/api/markers/{id})까지 전부 공개 조회라 접두사로 허용
+        String uri = request.getRequestURI();
+        if (PUBLIC_PATHS.contains(uri) || uri.startsWith("/api/markers/")) {
             filterChain.doFilter(request, response);
             return;
         }
