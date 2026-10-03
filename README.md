@@ -47,7 +47,7 @@
 | 회원 조회 | GET | `/api/users/{id}` | 필요 (Access Token) |
 | 마커 목록 | GET | `/api/markers` | 불필요 |
 | 마커 상세 | GET | `/api/markers/{id}` | 불필요 |
-| 제보 등록 | POST | `/api/reports` | 사용자(선택) |
+| 제보 등록 | POST | `/api/reports` | 필요 (로그인한 회원만) |
 | 대기 제보 목록 | GET | `/api/admin/reports` | 관리자 |
 | 제보 승인 | PATCH | `/api/admin/reports/{id}/approve` | 관리자 |
 | 제보 거절 | PATCH | `/api/admin/reports/{id}/reject` | 관리자 |

@@ -49,11 +49,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 검증만 하고 끝 - 누가 요청했는지(email)는 별도로 안 남김.
-        // 지금은 컨트롤러가 URL의 id만 보고 조회해서 문제없지만, "내 정보 조회"처럼
-        // "현재 로그인한 사용자가 누구인지" 알아야 하는 기능이 생기면 이 필터에서
-        // jwtTokenProvider.getEmail(token) 결과를 request attribute 등으로 넘겨줘야 함
+        // 토큰에 든 이메일을 추출해서 request에 담아 컨트롤러에 전달 - @RequestAttribute("email")로 꺼내 씀
         // (Spring Security로 가면 이 역할을 SecurityContextHolder가 대신 해줌)
+        request.setAttribute("email", jwtTokenProvider.getEmail(token));
+
         filterChain.doFilter(request, response);
     }
 
