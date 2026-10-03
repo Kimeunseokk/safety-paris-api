@@ -1,5 +1,7 @@
 package com.safetyparis.safetyparis_api.jwt;
 
+import com.safetyparis.safetyparis_api.entity.Role;
+import com.safetyparis.safetyparis_api.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,6 +18,7 @@ import java.util.Set;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
 
     // 로그인 없이 접근 가능한 경로 (회원가입/로그인/토큰 재발급, 도움기관 목록 조회).
     // startsWith가 아니라 정확히 일치하는지(contains)로 비교해야 함 - startsWith였다면
@@ -49,9 +52,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 토큰에 든 이메일을 추출해서 request에 담아 컨트롤러에 전달 - @RequestAttribute("email")로 꺼내 씀
+        String email = jwtTokenProvider.getEmail(token);
+
+        // 관리자 API(/api/admin/**)는 로그인(인증)에 더해 ADMIN 권한(인가)까지 필요 - 아니면 403
+        if (uri.startsWith("/api/admin/") && !isAdmin(email)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"message\": \"관리자 권한이 필요합니다.\"}");
+            return;
+        }
+
+        // 토큰에 든 이메일을 request에 담아 컨트롤러에 전달 - @RequestAttribute("email")로 꺼내 씀
         // (Spring Security로 가면 이 역할을 SecurityContextHolder가 대신 해줌)
-        request.setAttribute("email", jwtTokenProvider.getEmail(token));
+        request.setAttribute("email", email);
 
         filterChain.doFilter(request, response);
     }
@@ -63,5 +76,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return header.substring(7);
         }
         return null;
+    }
+
+    // 토큰은 유효해도 회원이 삭제됐을 수 있으므로 없으면 관리자 아님으로 처리
+    private boolean isAdmin(String email) {
+        return userRepository.findByEmail(email)
+                .map(user -> user.getRole() == Role.ADMIN)
+                .orElse(false);
     }
 }

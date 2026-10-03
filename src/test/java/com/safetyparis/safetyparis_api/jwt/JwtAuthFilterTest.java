@@ -1,5 +1,8 @@
 package com.safetyparis.safetyparis_api.jwt;
 
+import com.safetyparis.safetyparis_api.entity.Role;
+import com.safetyparis.safetyparis_api.entity.User;
+import com.safetyparis.safetyparis_api.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -9,8 +12,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.PrintWriter;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -27,6 +32,8 @@ class JwtAuthFilterTest {
 
     @Mock
     private JwtTokenProvider jwtTokenProvider;
+    @Mock
+    private UserRepository userRepository;
 
     @Mock
     private HttpServletRequest request;
@@ -118,5 +125,42 @@ class JwtAuthFilterTest {
 
         verify(filterChain).doFilter(request, response);
         verify(response, never()).setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+    }
+
+    private User userWithRole(Role role) {
+        User user = User.builder().email("user@test.com").password("encoded").nickname("tester").build();
+        ReflectionTestUtils.setField(user, "role", role);
+        return user;
+    }
+
+    @Test
+    @DisplayName("관리자 경로에 USER 권한이면 403을 응답하고 다음 단계로 넘기지 않는다")
+    void adminPath_userRole_returns403() throws Exception {
+        given(request.getRequestURI()).willReturn("/api/admin/reports");
+        given(request.getHeader("Authorization")).willReturn("Bearer valid-token");
+        given(jwtTokenProvider.validateToken("valid-token")).willReturn(true);
+        given(jwtTokenProvider.getEmail("valid-token")).willReturn("user@test.com");
+        given(userRepository.findByEmail("user@test.com")).willReturn(Optional.of(userWithRole(Role.USER)));
+        given(response.getWriter()).willReturn(mock(PrintWriter.class));
+
+        jwtAuthFilter.doFilter(request, response, filterChain);
+
+        verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        verify(filterChain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    @DisplayName("관리자 경로에 ADMIN 권한이면 다음 단계로 통과시킨다")
+    void adminPath_adminRole_passesThrough() throws Exception {
+        given(request.getRequestURI()).willReturn("/api/admin/reports/3/approve");
+        given(request.getHeader("Authorization")).willReturn("Bearer valid-token");
+        given(jwtTokenProvider.validateToken("valid-token")).willReturn(true);
+        given(jwtTokenProvider.getEmail("valid-token")).willReturn("admin@test.com");
+        given(userRepository.findByEmail("admin@test.com")).willReturn(Optional.of(userWithRole(Role.ADMIN)));
+
+        jwtAuthFilter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(response, never()).setStatus(HttpServletResponse.SC_FORBIDDEN);
     }
 }

@@ -73,4 +73,24 @@ public class Marker extends BaseTimeEntity {
         this.stolenItems = stolenItems;
         this.storyContent = storyContent;
     }
+
+    // report값 marker로 전달하는 메소드
+    public static Marker from(Report report) {
+        return Marker.builder()
+                .latitude(report.getLatitude())
+                .longitude(report.getLongitude())
+                .ageGroup(report.getAgeGroup())
+                .gender(report.getGender())
+                .clothing(report.getClothing())
+                .race(report.getRace())
+                .headCount(report.getHeadCount())
+                .height(report.getHeight())
+                .build(report.getBuild())
+                .hasBeard(report.getHasBeard())
+                .hasGlasses(report.getHasGlasses())
+                .locationDescription(report.getLocationDescription())
+                .stolenItems(report.getStolenItems())
+                .storyContent(report.getStoryContent())
+                .build();
+    }
 }

@@ -79,4 +79,20 @@ public class Report extends BaseTimeEntity {
         this.stolenItems = stolenItems;
         this.storyContent = storyContent;
     }
+
+    public void approve(){
+        validatePending();// 상태(PENDING -> APPROVED)
+        this.status = ReportStatus.APPROVED;
+    }
+
+    public void reject(){ // t상태(PENDING -> REJECTED)
+        validatePending();
+        this.status = ReportStatus.REJECTED;
+    }
+
+    private void validatePending(){
+        if(this.status != ReportStatus.PENDING){
+            throw new IllegalArgumentException("이미 처리된 제보입니다.");
+        }
+    }
 }

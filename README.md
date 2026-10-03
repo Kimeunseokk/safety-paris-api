@@ -125,18 +125,19 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
 - [x] 회원가입 (`POST /api/users`) — 이메일 중복 체크, BCrypt 비밀번호 암호화
 - [x] 로그인 (`POST /api/users/login`) — 이메일/비밀번호 검증 + Access/Refresh Token 발급
 - [x] 토큰 재발급 (`POST /api/users/recreate`) — Refresh Token 검증 + Redis 대조
-- [x] JWT 기반 인증/인가 — `JwtAuthFilter`로 보호 경로 요청 시 토큰 검사 (`GET /api/users/{id}` 적용)
+- [x] JWT 기반 인증/인가 — `JwtAuthFilter`로 보호 경로 토큰 검사(401) + `/api/admin/**`은 `ADMIN` role 검사(403), 토큰의 email을 컨트롤러로 전달
 - [x] 회원 조회 (`GET /api/users/{id}`) — 인증 필요
-- [x] `UserService`/`MarkerService`/`JwtTokenProvider`/`JwtAuthFilter` 단위 테스트 (24개, `TESTING.md` 참고)
+- [x] `UserService`/`MarkerService`/`ReportService`/`JwtTokenProvider`/`JwtAuthFilter` 단위 테스트 (29개, `TESTING.md` 참고)
 - [x] HelpLocation 도움기관 목록 조회 (`GET /api/help-locations`)
 - [x] Marker 목록/상세 조회 (`GET /api/markers`, `GET /api/markers/{id}`) — 인증 불필요, 없는 id는 404
-- [ ] Report (제보 등록 + 관리자 승인/거절)
+- [x] Report 제보 등록 (`POST /api/reports`) — 로그인한 회원만, 등록 시 `PENDING` 상태로 저장
+- [x] Report 관리자 대기 목록/승인/거절 (`/api/admin/reports`) — `ADMIN`만, 승인 시 Marker로 전환되어 지도에 노출, 이미 처리된 제보는 재처리 불가
 - [ ] Redis 캐싱 (마커 목록 등)
 
 ## 남은 설계 고려사항
 
-- 관리자 인증: `Member`에 `role` 필드 추가 방식으로 진행 중 (별도 Admin 엔티티 분리는 미채택)
-- `JwtAuthFilter`는 인증(로그인 여부)만 확인하고 인가(role 기반 접근 제어)는 아직 없음 — 관리자 전용 API(`/api/admin/reports/*`) 만들 때 role 검사 추가 필요
+- 관리자 인증: `User`의 `role` 필드(`USER`/`ADMIN`) 방식으로 구현 (별도 Admin 엔티티 분리는 미채택)
+- 관리자 인가는 `JwtAuthFilter`에서 `/api/admin/**` 요청마다 DB로 role 조회 — 관리자 요청이 많아지면 JWT에 role을 넣어 조회 생략 고려
 - 마커 "임의 수정 방지"는 수정/삭제 API를 아예 제공하지 않는 방식으로 해결 (Marker는 관리자 승인으로만 생성)
-- 장난성 제보 필터링(관리자 거절 처리), Rate Limiting은 시간 되면 적용
-- 관리자 계정 최초 생성 방식 결정 필요 (DB 직접 삽입 vs 별도 API)
+- 장난성 제보 필터링은 관리자 거절로 처리, Rate Limiting은 시간 되면 적용
+- 관리자 계정은 일반 회원가입 후 DB에서 role을 직접 변경해 지정 (`UPDATE users SET role = 'ADMIN' WHERE email = ...`) — 회원가입으로 관리자가 될 수 없게 하기 위함
