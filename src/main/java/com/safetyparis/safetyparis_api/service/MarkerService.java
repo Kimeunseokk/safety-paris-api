@@ -5,6 +5,7 @@ import com.safetyparis.safetyparis_api.dto.MarkerListResponseDto;
 import com.safetyparis.safetyparis_api.entity.Marker;
 import com.safetyparis.safetyparis_api.repository.MarkerRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ public class MarkerService {
         return new  MarkerDetailResponseDto(marker);
     }
 
+    @Cacheable("markers")
     public List<MarkerListResponseDto> getMarkerList(){
         return markerRepository.findAll().stream()
                 .map(MarkerListResponseDto::new)

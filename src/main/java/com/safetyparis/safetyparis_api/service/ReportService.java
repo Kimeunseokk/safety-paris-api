@@ -11,6 +11,7 @@ import com.safetyparis.safetyparis_api.repository.MarkerRepository;
 import com.safetyparis.safetyparis_api.repository.ReportRepository;
 import com.safetyparis.safetyparis_api.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,7 @@ public class ReportService {
     // 승인하기 - 상태 변경 후 Report 값을 복사한 Marker 저장(지도 노출)
     // approve()가 먼저 PENDING 검사를 하므로 이미 처리된 제보는 Marker가 중복 생성되지 않음
     @Transactional
+    @CacheEvict(value = "markers" , allEntries = true)
     public AdminResponseDto approveReport(Long reportId) {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new NoSuchElementException("존재하지 않는 제보입니다. id=" + reportId));

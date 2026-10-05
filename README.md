@@ -132,7 +132,7 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
 - [x] Marker 목록/상세 조회 (`GET /api/markers`, `GET /api/markers/{id}`) — 인증 불필요, 없는 id는 404
 - [x] Report 제보 등록 (`POST /api/reports`) — 로그인한 회원만, 등록 시 `PENDING` 상태로 저장
 - [x] Report 관리자 대기 목록/승인/거절 (`/api/admin/reports`) — `ADMIN`만, 승인 시 Marker로 전환되어 지도에 노출, 이미 처리된 제보는 재처리 불가
-- [ ] Redis 캐싱 (마커 목록 등)
+- [x] Redis 캐싱 — 마커 목록(`GET /api/markers`)을 `@Cacheable`로 캐싱, 제보 승인 시 `@CacheEvict`로 무효화
 
 ## 남은 설계 고려사항
 
