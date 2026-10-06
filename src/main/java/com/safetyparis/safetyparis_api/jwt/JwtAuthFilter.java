@@ -1,70 +1,45 @@
 package com.safetyparis.safetyparis_api.jwt;
 
-import com.safetyparis.safetyparis_api.entity.Role;
 import com.safetyparis.safetyparis_api.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Set;
+import java.util.List;
 
-@Component
+// @Component를 붙이지 않음 - 붙이면 Spring Boot가 일반 서블릿 필터로도 자동 등록해 두 번 실행됨.
+// SecurityConfig에서 직접 생성해 Spring Security 필터 체인에만 넣는다.
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
 
-    // 로그인 없이 접근 가능한 경로 (회원가입/로그인/토큰 재발급, 도움기관 목록 조회).
-    // startsWith가 아니라 정확히 일치하는지(contains)로 비교해야 함 - startsWith였다면
-    // "/api/users/5"(보호 대상)도 "/api/users"로 시작한다는 이유로 통과돼버렸을 것.
-    private static final Set<String> PUBLIC_PATHS = Set.of(
-            "/api/users",
-            "/api/users/login",
-            "/api/users/recreate",
-            "/api/help-locations",
-            "/api/markers"
-    );
-
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        // 이 필터는 등록된 모든 요청에 적용되므로, 나중에 Swagger/actuator 등을
-        // 추가하면 그 경로들도 PUBLIC_PATHS에 넣어줘야 막히지 않음
-        // 마커는 상세 조회(/api/markers/{id})까지 전부 공개 조회라 접두사로 허용
-        String uri = request.getRequestURI();
-        if (PUBLIC_PATHS.contains(uri) || uri.startsWith("/api/markers/")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
+        // 토큰이 유효하면 SecurityContext에 "누가, 어떤 권한으로" 요청했는지 등록만 한다.
+        // 거절(401/403)은 하지 않음 - 토큰이 없거나 무효여도 그냥 넘기고, 로그인/권한이 필요한
+        // 주소인지는 SecurityConfig의 접근 규칙이 판단한다. (그래서 공개 경로 목록이 여기엔 없음)
         String token = resolveToken(request);
-        if (token == null || !jwtTokenProvider.validateToken(token)) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"message\": \"인증이 필요합니다.\"}");
-            return;
+        if (token != null && jwtTokenProvider.validateToken(token)) {
+            String email = jwtTokenProvider.getEmail(token);
+            // 토큰은 유효해도 회원이 삭제됐을 수 있으므로 없으면 등록하지 않음(= 비로그인 취급)
+            userRepository.findByEmail(email).ifPresent(user -> {
+                // hasRole("ADMIN")은 "ROLE_ADMIN" 권한을 찾으므로 접두사를 붙여 등록
+                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                        email, null, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            });
         }
-
-        String email = jwtTokenProvider.getEmail(token);
-
-        // 관리자 API(/api/admin/**)는 로그인(인증)에 더해 ADMIN 권한(인가)까지 필요 - 아니면 403
-        if (uri.startsWith("/api/admin/") && !isAdmin(email)) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"message\": \"관리자 권한이 필요합니다.\"}");
-            return;
-        }
-
-        // 토큰에 든 이메일을 request에 담아 컨트롤러에 전달 - @RequestAttribute("email")로 꺼내 씀
-        // (Spring Security로 가면 이 역할을 SecurityContextHolder가 대신 해줌)
-        request.setAttribute("email", email);
 
         filterChain.doFilter(request, response);
     }
@@ -76,12 +51,5 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return header.substring(7);
         }
         return null;
-    }
-
-    // 토큰은 유효해도 회원이 삭제됐을 수 있으므로 없으면 관리자 아님으로 처리
-    private boolean isAdmin(String email) {
-        return userRepository.findByEmail(email)
-                .map(user -> user.getRole() == Role.ADMIN)
-                .orElse(false);
     }
 }

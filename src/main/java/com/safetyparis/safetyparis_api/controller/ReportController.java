@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,9 +17,9 @@ public class ReportController {
 
     private final ReportService reportService;
 
-    // email은 JwtAuthFilter가 토큰에서 꺼내 request attribute로 넣어준 값
+    // email은 JwtAuthFilter가 SecurityContext에 등록한 로그인 사용자(principal) - 토큰에서 꺼낸 값
     @PostMapping
-    public ResponseEntity<ReportResponseDto> createReport(@RequestAttribute("email") String email,
+    public ResponseEntity<ReportResponseDto> createReport(@AuthenticationPrincipal String email,
                                                           @RequestBody @Valid ReportCreateRequestDto reportCreateRequestDto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(reportService.createReport(email, reportCreateRequestDto));
     }

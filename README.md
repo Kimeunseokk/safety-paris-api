@@ -141,3 +141,57 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
 - 마커 "임의 수정 방지"는 수정/삭제 API를 아예 제공하지 않는 방식으로 해결 (Marker는 관리자 승인으로만 생성)
 - 장난성 제보 필터링은 관리자 거절로 처리, Rate Limiting은 시간 되면 적용
 - 관리자 계정은 일반 회원가입 후 DB에서 role을 직접 변경해 지정 (`UPDATE users SET role = 'ADMIN' WHERE email = ...`) — 회원가입으로 관리자가 될 수 없게 하기 위함
+
+## Spring Security 전환
+
+### 전환 동기
+
+처음에는 JWT 인증이 내부적으로 어떻게 동작하는지 이해하기 위해, Spring Security 없이 `OncePerRequestFilter`를 상속한 `JwtAuthFilter` 하나로 인증과 인가를 직접 구현했습니다. 관리자 기능까지 완성한 뒤, 검증된 실무 표준인 Spring Security로 전환했습니다.
+
+전환 전 `JwtAuthFilter`가 맡던 역할:
+
+- 로그인 없이 접근 가능한 경로 목록(`PUBLIC_PATHS`) 관리
+- 토큰 검증 실패 시 401 응답 직접 작성
+- 요청 주소가 `/api/admin/`으로 시작하면 DB에서 role을 조회해 `ADMIN`이 아니면 403 응답 직접 작성
+- 토큰의 email을 `request.setAttribute()`로 컨트롤러에 전달
+
+직접 구현하면서 겪은 불편도 있었습니다. 새 API를 추가할 때마다 필터의 공개 경로 목록을 직접 고쳐야 했고, 실제로 마커 상세 조회(`/api/markers/{id}`)를 목록에 빠뜨려 로그인 없이 조회하면 401이 나는 버그가 있었습니다.
+
+### 전환하며 발견한 문제 — 관리자 권한 우회
+
+전환 과정에서 기존 필터를 다시 점검하다가, **일반 회원이 관리자 API를 호출할 수 있는 구멍**을 발견했습니다. 전환 직전 코드를 따로 띄워 일반 회원(USER) 토큰으로 확인한 결과:
+
+| 요청 | 전환 전 (직접 구현 필터) | 전환 후 (Spring Security) |
+|---|---|---|
+| `GET /api/admin/reports` | 403 | 403 |
+| `GET /api/admin;x=1/reports` | **200 — 우회됨** | 400 — 차단 |
+| `PATCH /api/admin;x=1/reports/{id}/approve` | **200 — 일반 회원이 자기 제보를 승인, 지도에 마커 생성** | 400 — 차단 |
+
+**원인**: 필터는 요청 주소를 문자열로 비교했습니다(`uri.startsWith("/api/admin/")`). `/api/admin;x=1/reports`는 이 조건에 걸리지 않아 관리자 검사를 건너뛰었는데, Spring MVC는 주소의 `;` 뒷부분(매트릭스 변수)을 무시하고 컨트롤러를 찾기 때문에 그대로 관리자 컨트롤러에 도달했습니다. **필터가 해석하는 주소와 Spring MVC가 해석하는 주소가 달라서** 생긴 문제입니다.
+
+**전환 후 차단되는 이유**: Spring Security의 기본 `StrictHttpFirewall`이 `;`, 인코딩된 `/`, `..` 등 이런 식으로 악용될 수 있는 주소를 요청 단계에서 거절(400)합니다. 별도 설정 없이 기본으로 동작합니다.
+
+→ 보안 로직을 직접 구현하면 주소 정규화 같은 세부 사항을 놓치기 쉽고, 이런 부분을 검증된 프레임워크에 맡기는 이유를 직접 확인한 경험이었습니다.
+
+### 전환 후 구조
+
+| 역할 | 전환 전 | 전환 후 |
+|---|---|---|
+| 토큰 검증 → 사용자 식별 | `JwtAuthFilter` | `JwtAuthFilter` (SecurityContext에 사용자·권한 등록만) |
+| 공개 경로 / 로그인 필요 / 관리자 전용 규칙 | `JwtAuthFilter` 안의 `Set`과 `if`문 | `SecurityConfig`에 선언 (`permitAll`, `authenticated`, `hasRole("ADMIN")`) |
+| 401 / 403 응답 | 필터에서 직접 작성 | `AuthenticationEntryPoint` / `AccessDeniedHandler` |
+| 컨트롤러로 사용자 전달 | `request.setAttribute("email")` → `@RequestAttribute` | `SecurityContext` → `@AuthenticationPrincipal` |
+
+### 전환 후 달라진 점
+
+- 접근 규칙이 `SecurityConfig` 한 곳에 모여, 어떤 API가 누구에게 열려 있는지 한눈에 보이고 새 API는 규칙 한 줄만 추가하면 됨
+- 공개 경로에 HTTP 메서드까지 지정해 더 엄격해짐 (예: 이전엔 `/api/users`가 모든 메서드에 열려 있었으나 이제 회원가입 POST만 공개)
+- 관리자 검사가 `hasRole("ADMIN")` 한 줄로 대체됨
+- 접근 규칙(공개 / 401 / 403 / 통과)을 MockMvc 통합 테스트(`SecurityConfigTest`)로 검증
+- 정상 요청의 응답(상태 코드, 메시지)은 전환 전과 동일하게 유지해 클라이언트 영향 없음
+
+### 전환하면서 주의한 점
+
+- **필터 중복 실행 방지**: `@Component`가 붙은 필터는 Spring Boot가 일반 서블릿 필터로도 자동 등록해 두 번 실행되므로, `SecurityConfig`에서 직접 생성해 Security 필터 체인에만 등록
+- **`/error` 경로 허용**: 예외 발생 시 톰캣이 내부적으로 `/error`로 요청을 넘기는데, 이 경로가 막혀 있으면 400 응답이 401로 바뀌므로 `permitAll` 처리
+- **권한 접두사**: `hasRole("ADMIN")`은 `ROLE_ADMIN` 권한을 찾으므로 필터에서 `"ROLE_" + role`로 등록
