@@ -6,6 +6,15 @@
 
 > 원본 기획: `소프트웨어공학_계획서.pdf` (SRS) 기반으로 재설계
 
+## 배포
+
+- **API 서버**: http://13.209.19.229:8080
+- 바로 확인해 볼 수 있는 공개 API (로그인 불필요)
+  - 도움기관 목록: http://13.209.19.229:8080/api/help-locations
+  - 마커 목록: http://13.209.19.229:8080/api/markers
+- 구성: AWS EC2 1대에 Docker Compose로 Spring Boot + MySQL + Redis 실행 (외부에는 8080만 공개)
+- 배포 방식: 로컬에서 서버용(linux/amd64) 이미지를 빌드해 서버로 전송 → 서버는 빌드 없이 실행만 (1GB 서버라 빌드 부담 분리), DB 스키마는 Flyway로 자동 적용
+
 ## 기술 스택
 
 - Java 21 / Spring Boot 3.3.0
