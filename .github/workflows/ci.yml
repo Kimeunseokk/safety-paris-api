@@ -1,4 +1,5 @@
-# CI: main에 push하거나 PR을 올리면 GitHub이 빌려주는 컴퓨터에서 전체 테스트를 자동 실행
+# CI/CD: main에 push하거나 PR을 올리면 전체 테스트를 자동 실행하고,
+#        main push이고 테스트가 통과하면 이미지를 빌드해 EC2에 자동 배포
 name: CI
 
 on:
@@ -59,3 +60,75 @@ jobs:
         with:
           name: test-report
           path: build/reports/tests/test
+
+  # ───────── CD: 테스트 통과 + main push일 때만 배포 (PR에서는 실행 안 함) ─────────
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # 배포가 겹치지 않게 - 직전 배포가 끝나기 전에 새 push가 오면 순서대로 실행
+    concurrency: production-deploy
+    permissions:
+      contents: read
+      packages: write          # GHCR에 이미지 업로드
+    env:
+      # GHCR 이미지 이름은 소문자만 허용
+      IMAGE: ghcr.io/kimeunseokk/safety-paris-api
+
+    steps:
+      - name: 코드 내려받기
+        uses: actions/checkout@v4
+
+      - name: GHCR 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Buildx 준비
+        uses: docker/setup-buildx-action@v3
+
+      # EC2는 x86_64라 linux/amd64로 빌드. latest(운영 기본값) + 커밋 해시(되돌리기용) 두 태그로 업로드
+      - name: 이미지 빌드 및 업로드
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          # 이미지를 이 저장소와 연결 → 저장소 페이지 Packages에 표시되고 저장소 권한으로 접근 관리
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: SSH 키 준비
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy.pem
+          chmod 600 ~/.ssh/deploy.pem
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      # 서버: 최신 설정(git pull) → GHCR에서 새 이미지 받기 → app만 교체 → 정상 기동 확인
+      # GHCR 로그인은 이번 배포 동안만 유효한 GITHUB_TOKEN으로 하고, 끝나면 로그아웃해서 서버에 자격증명을 남기지 않음
+      - name: EC2에 배포
+        run: |
+          ssh -i ~/.ssh/deploy.pem ec2-user@${{ secrets.EC2_HOST }} bash -s <<'REMOTE'
+          set -e
+          cd ~/safety-paris-api
+          git pull --ff-only
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker compose pull app
+          docker logout ghcr.io
+          docker compose up -d
+          docker image prune -f
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:8080/api/help-locations > /dev/null; then
+              echo "배포 성공: 앱이 정상 응답"; exit 0
+            fi
+            sleep 3
+          done
+          echo "배포 실패: 앱이 2분 안에 응답하지 않음"; docker compose logs --tail 50 app; exit 1
+          REMOTE

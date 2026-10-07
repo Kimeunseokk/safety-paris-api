@@ -21,7 +21,9 @@ services:
 
   app:
     build: .                               # 로컬: 같은 폴더의 Dockerfile로 이미지 생성 (up --build)
-    image: safetyparis-api:latest          # 운영 서버: 빌드하지 않고 이 이름의 이미지를 받아서 실행만 함
+    # 운영 서버: 빌드하지 않고 GHCR에서 이 이미지를 받아 실행만 함 (GitHub Actions가 빌드·업로드)
+    # 기본은 latest, 문제가 생기면 IMAGE_TAG=<커밋 해시> docker compose up -d 로 이전 버전으로 되돌림
+    image: ghcr.io/kimeunseokk/safety-paris-api:${IMAGE_TAG:-latest}
     ports:
       - "8080:8080"                        # 외부에는 앱만 공개
     environment:
