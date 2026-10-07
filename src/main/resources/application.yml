@@ -1,25 +1,21 @@
+# 공통 설정 - 개발/운영 모두 같은 값
+# 환경마다 다른 값(DB 주소, ddl-auto, SQL 로그 등)은 application-dev.yml / application-prod.yml에 둠
 spring:
+  profiles:
+    # 기본은 개발(dev). 운영 서버에서는 환경변수 SPRING_PROFILES_ACTIVE=prod 로 실행하면 이 값을 덮어씀
+    active: dev
 
   datasource:
-    url: jdbc:mysql://localhost:3306/safetyparis?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-    username: root
-    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
-
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
 
   data:
     redis:
-      host: localhost
       port: 6379
 
 jwt:
   secret: ${JWT_SECRET_KEY}
-  access-token-expiration: 900000
-  refresh-token-expiration: 259200000
+  access-token-expiration: 900000       # 15분
+  refresh-token-expiration: 259200000   # 3일
 
 server:
   port: 8080

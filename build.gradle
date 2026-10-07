@@ -34,6 +34,9 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-mysql'
+
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
 	// Spring Security — JWT 인증 필터, URL별 접근 제어(ADMIN 등), BCrypt 비밀번호 암호화

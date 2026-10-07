@@ -1,0 +1,20 @@
+# 개발용 (로컬) - 비밀번호/JWT 키는 프로젝트 루트의 .env에서 읽음
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/safetyparis?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: root
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      # 엔티티에 필드/엔티티를 추가하면 테이블에 자동 반영 - 개발 편의용
+      ddl-auto: update
+    show-sql: true
+
+  flyway:
+    # 개발 DB엔 update로 만든 테이블이 이미 있음 → V1을 실행하지 않고 "적용됨"으로만 기록 (CREATE TABLE 중복 에러 방지)
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: localhost

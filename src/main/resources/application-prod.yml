@@ -1,0 +1,18 @@
+# 운영용 (배포 서버) - 서버마다 다른 값은 전부 환경변수로 주입, 코드에 주소/비밀번호를 두지 않음
+#   필요한 환경변수: SPRING_PROFILES_ACTIVE=prod, DB_URL, DB_USERNAME, DB_PASSWORD, REDIS_HOST, JWT_SECRET_KEY
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      # 테이블을 자동으로 바꾸지 않고, 엔티티와 테이블이 다르면 시작을 실패시킴 (운영 데이터 보호)
+      # 테이블 생성/변경은 별도로 관리해야 함 - 빈 DB에 첫 배포하면 테이블이 없어 시작 실패
+      ddl-auto: validate
+    show-sql: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
