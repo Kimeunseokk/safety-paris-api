@@ -20,7 +20,8 @@ services:
     # ports 없음 - 위와 같은 이유
 
   app:
-    build: .                               # 같은 폴더의 Dockerfile로 이미지 생성
+    build: .                               # 로컬: 같은 폴더의 Dockerfile로 이미지 생성 (up --build)
+    image: safetyparis-api:latest          # 운영 서버: 빌드하지 않고 이 이름의 이미지를 받아서 실행만 함
     ports:
       - "8080:8080"                        # 외부에는 앱만 공개
     environment:
