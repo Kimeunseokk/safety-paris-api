@@ -9,6 +9,7 @@
 ## 배포
 
 - **API 기본 주소**: `http://13.209.19.229:8080` (루트 `/`는 API가 없어 401 응답 — 아래 공개 API로 확인)
+- **API 문서 (Swagger UI)**: http://13.209.19.229:8080/swagger-ui/index.html — 브라우저에서 전체 API 명세를 보고 직접 호출 가능
 - 바로 확인해 볼 수 있는 공개 API (로그인 불필요)
   - 마커 목록: http://13.209.19.229:8080/api/markers
   - 마커 상세: http://13.209.19.229:8080/api/markers/1
@@ -38,6 +39,7 @@
 | DB / Cache | MySQL, Redis (Refresh Token 저장, 마커 목록 캐싱), Flyway (스키마·기준 데이터 버전 관리) |
 | 테스트 | JUnit 5, Mockito, AssertJ, MockMvc, spring-security-test |
 | 인프라 / 배포 | Docker, Docker Compose, AWS EC2, GitHub Actions (CI/CD), GHCR |
+| API 문서 | springdoc-openapi (Swagger UI) |
 | 기타 | Lombok, Bean Validation, spring-dotenv |
 
 ## 아키텍처 및 배포
@@ -72,6 +74,12 @@ docker compose up -d --build
 ```
 
 ## API 명세
+
+전체 명세와 요청/응답 형식은 **Swagger UI**에서 확인하고 바로 호출해 볼 수 있습니다.
+
+- 배포 서버: http://13.209.19.229:8080/swagger-ui/index.html
+- 로컬: http://localhost:8080/swagger-ui/index.html
+- springdoc이 컨트롤러·DTO(검증 어노테이션 포함)를 읽어 OpenAPI 명세(`/v3/api-docs`)를 자동 생성 → 코드와 문서가 항상 일치
 
 | 기능 | Method | Endpoint | 인증 |
 |---|---|---|---|
@@ -220,7 +228,7 @@ EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로
 
 ## 향후 개선
 
-- Swagger(springdoc)로 API 문서화 및 브라우저에서 직접 호출 가능하게
+- Swagger UI에 JWT 인증(Authorize) 설정 — 로그인이 필요한 API도 브라우저에서 바로 호출 가능하게
 - 도메인 연결 + HTTPS (현재는 IP·HTTP라 토큰이 평문 전송됨)
 - 예외별 상태 코드 세분화 (로그인 실패 401, 중복 이메일·이미 처리된 제보 409)
 - 제보 남용 방지를 위한 Rate Limiting
