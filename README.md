@@ -1,5 +1,7 @@
 # Safety-Paris API
 
+[![CI](https://github.com/Kimeunseokk/safety-paris-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Kimeunseokk/safety-paris-api/actions/workflows/ci.yml)
+
 파리 여행 중 소매치기 등 경범죄 정보를 사용자들이 제보/공유하여 예방에 기여하는 웹 서비스의 백엔드 API입니다.
 
 > 원본 기획: `소프트웨어공학_계획서.pdf` (SRS) 기반으로 재설계
