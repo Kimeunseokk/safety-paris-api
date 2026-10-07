@@ -1,0 +1,42 @@
+# 운영과 같은 구성(앱 + MySQL + Redis)을 한 번에 실행: docker compose up -d --build
+# ${DB_PASSWORD}, ${JWT_SECRET_KEY}는 같은 폴더의 .env에서 자동으로 읽음
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: safetyparis
+    volumes:
+      - mysql-data:/var/lib/mysql          # 컨테이너를 지워도 DB 데이터는 유지
+    healthcheck:                           # 접속 가능해질 때까지 확인 → 앱은 그 뒤에 시작
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # ports 없음 - 외부에서 직접 접속 불가, 같은 compose 안의 app만 접근 (운영 보안 원칙)
+
+  redis:
+    image: redis:7
+    # ports 없음 - 위와 같은 이유
+
+  app:
+    build: .                               # 같은 폴더의 Dockerfile로 이미지 생성
+    ports:
+      - "8080:8080"                        # 외부에는 앱만 공개
+    environment:
+      SPRING_PROFILES_ACTIVE: prod         # validate + Flyway로 빈 DB에 테이블/기준 데이터 생성
+      TZ: Asia/Seoul                       # 컨테이너 기본 시간대는 UTC라 createdAt이 9시간 늦게 저장됨 → 한국 시간으로
+      # 컨테이너 안에서 localhost는 app 자기 자신 → DB/Redis 주소는 서비스 이름(mysql, redis)
+      DB_URL: jdbc:mysql://mysql:3306/safetyparis?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      DB_USERNAME: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+    depends_on:
+      mysql:
+        condition: service_healthy         # MySQL 준비 완료 후 시작 (안 기다리면 앱이 DB 연결 실패로 종료)
+      redis:
+        condition: service_started
+
+volumes:
+  mysql-data:
