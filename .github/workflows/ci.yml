@@ -64,7 +64,9 @@ jobs:
   # ───────── CD: 테스트 통과 + main push일 때만 배포 (PR에서는 실행 안 함) ─────────
   deploy:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 비용 문제로 EC2를 중지해 배포를 꺼 둠 (꺼진 서버에 SSH 접속 실패로 매 push가 ❌ 되는 것 방지)
+    # 서버를 다시 켜면 아래 줄을 원래 조건으로 복구: if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: false
     runs-on: ubuntu-latest
     # 배포가 겹치지 않게 - 직전 배포가 끝나기 전에 새 push가 오면 순서대로 실행
     concurrency: production-deploy

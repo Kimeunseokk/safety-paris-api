@@ -8,8 +8,10 @@
 
 ## 배포
 
+> ⚠️ 현재 **비용 문제로 배포 서버(AWS EC2)를 중지**해 아래 주소는 열리지 않습니다. 배포 당시 Swagger 실행 화면은 캡처로 대신합니다. CI/CD의 자동 배포 단계도 함께 꺼 두었고, 테스트(CI)는 push마다 계속 실행됩니다.
+
 - **API 기본 주소**: `http://13.209.19.229:8080` (루트 `/`는 API가 없어 401 응답 — 아래 공개 API로 확인)
-- **API 문서 (Swagger UI)**: http://13.209.19.229:8080/swagger-ui/index.html — 브라우저에서 전체 API 명세를 보고 직접 호출 가능
+- **API 문서 (Swagger UI)**: http://13.209.19.229:8080/swagger-ui/index.html — 브라우저에서 전체 API 명세를 보고 직접 호출 가능 (서버 중지 중)
 - 바로 확인해 볼 수 있는 공개 API (로그인 불필요)
   - 마커 목록: http://13.209.19.229:8080/api/markers
   - 마커 상세: http://13.209.19.229:8080/api/markers/1
@@ -60,6 +62,7 @@ main에 push
              → SSH로 EC2 접속 → 새 이미지 pull → 앱 컨테이너만 교체 → 헬스 체크
 ```
 
+- 현재는 서버를 중지해 `deploy` 작업을 꺼 둔 상태 (`ci.yml`의 `if: false`), `test`만 실행
 - 서버의 GHCR 로그인은 배포 중에만 유지하고 끝나면 로그아웃 (서버에 자격증명을 남기지 않음)
 - 이미지를 커밋 해시로도 태깅해, 문제가 생기면 `IMAGE_TAG=<커밋 해시> docker compose up -d`로 이전 버전 복구
 
@@ -77,7 +80,7 @@ docker compose up -d --build
 
 전체 명세와 요청/응답 형식은 **Swagger UI**에서 확인하고 바로 호출해 볼 수 있습니다.
 
-- 배포 서버: http://13.209.19.229:8080/swagger-ui/index.html
+- 배포 서버: http://13.209.19.229:8080/swagger-ui/index.html (현재 서버 중지 중)
 - 로컬: http://localhost:8080/swagger-ui/index.html
 - springdoc이 컨트롤러·DTO(검증 어노테이션 포함)를 읽어 OpenAPI 명세(`/v3/api-docs`)를 자동 생성 → 코드와 문서가 항상 일치
 
