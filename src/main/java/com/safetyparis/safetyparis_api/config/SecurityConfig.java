@@ -48,7 +48,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/help-locations", "/api/markers", "/api/markers/*").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        .anyRequest().authenticated()
+                        .anyRequest().authenticated() // 로그인한 사람만 가능
                 )
 
                 // 기존 JwtAuthFilter와 같은 응답 형식 유지
