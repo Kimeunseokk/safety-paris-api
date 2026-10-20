@@ -58,7 +58,7 @@ public class UserService {
     @Transactional // 토큰 재발급
     public TokenResponseDto recreateAccessToken(RefreshTokenRequestDto refreshTokenRequestDto) {
         String refreshtoken = refreshTokenRequestDto.getToken();
-        if(!jwtTokenProvider.validateToken(refreshtoken)) {
+        if(!jwtTokenProvider.validateToken(refreshtoken, JwtTokenProvider.REFRESH)) {
             throw new IllegalArgumentException("유효하지 않는 토큰입니다");
         }
         String email = jwtTokenProvider.getEmail(refreshtoken);

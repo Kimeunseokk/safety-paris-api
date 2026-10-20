@@ -60,7 +60,7 @@ class JwtAuthFilterTest {
 
     private void givenValidToken(String email) {
         given(request.getHeader("Authorization")).willReturn("Bearer valid-token");
-        given(jwtTokenProvider.validateToken("valid-token")).willReturn(true);
+        given(jwtTokenProvider.validateToken("valid-token", JwtTokenProvider.ACCESS)).willReturn(true);
         given(jwtTokenProvider.getEmail("valid-token")).willReturn(email);
     }
 
@@ -99,7 +99,7 @@ class JwtAuthFilterTest {
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(filterChain).doFilter(request, response);
-        verify(jwtTokenProvider, never()).validateToken(anyString());
+        verify(jwtTokenProvider, never()).validateToken(anyString(), anyString());
     }
 
     @Test
@@ -117,7 +117,7 @@ class JwtAuthFilterTest {
     @DisplayName("유효하지 않은 토큰이면 등록하지 않는다")
     void invalidToken_passesWithoutAuthentication() throws Exception {
         given(request.getHeader("Authorization")).willReturn("Bearer bad-token");
-        given(jwtTokenProvider.validateToken("bad-token")).willReturn(false);
+        given(jwtTokenProvider.validateToken("bad-token", JwtTokenProvider.ACCESS)).willReturn(false);
 
         jwtAuthFilter.doFilter(request, response, filterChain);
 

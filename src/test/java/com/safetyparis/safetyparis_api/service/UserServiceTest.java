@@ -170,7 +170,7 @@ class UserServiceTest {
         RefreshTokenRequestDto requestDto = refreshTokenRequest("refresh-token");
         RefreshToken savedToken = new RefreshToken("test@test.com", "refresh-token", 259200L);
 
-        given(jwtTokenProvider.validateToken("refresh-token")).willReturn(true);
+        given(jwtTokenProvider.validateToken("refresh-token", JwtTokenProvider.REFRESH)).willReturn(true);
         given(jwtTokenProvider.getEmail("refresh-token")).willReturn("test@test.com");
         given(refreshTokenRepository.findById("test@test.com")).willReturn(Optional.of(savedToken));
         given(jwtTokenProvider.createAccessToken("test@test.com")).willReturn("new-access-token");
@@ -188,7 +188,7 @@ class UserServiceTest {
     void recreateAccessToken_invalidToken_throwsException() {
         // given
         RefreshTokenRequestDto requestDto = refreshTokenRequest("invalid-token");
-        given(jwtTokenProvider.validateToken("invalid-token")).willReturn(false);
+        given(jwtTokenProvider.validateToken("invalid-token", JwtTokenProvider.REFRESH)).willReturn(false);
 
         // when & then
         assertThatThrownBy(() -> userService.recreateAccessToken(requestDto))
@@ -203,7 +203,7 @@ class UserServiceTest {
     void recreateAccessToken_noSavedToken_throwsException() {
         // given
         RefreshTokenRequestDto requestDto = refreshTokenRequest("refresh-token");
-        given(jwtTokenProvider.validateToken("refresh-token")).willReturn(true);
+        given(jwtTokenProvider.validateToken("refresh-token", JwtTokenProvider.REFRESH)).willReturn(true);
         given(jwtTokenProvider.getEmail("refresh-token")).willReturn("test@test.com");
         given(refreshTokenRepository.findById("test@test.com")).willReturn(Optional.empty());
 
@@ -220,7 +220,7 @@ class UserServiceTest {
         RefreshTokenRequestDto requestDto = refreshTokenRequest("old-refresh-token");
         RefreshToken savedToken = new RefreshToken("test@test.com", "new-refresh-token", 259200L);
 
-        given(jwtTokenProvider.validateToken("old-refresh-token")).willReturn(true);
+        given(jwtTokenProvider.validateToken("old-refresh-token", JwtTokenProvider.REFRESH)).willReturn(true);
         given(jwtTokenProvider.getEmail("old-refresh-token")).willReturn("test@test.com");
         given(refreshTokenRepository.findById("test@test.com")).willReturn(Optional.of(savedToken));
 

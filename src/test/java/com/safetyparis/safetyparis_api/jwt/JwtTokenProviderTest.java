@@ -49,7 +49,17 @@ class JwtTokenProviderTest {
         String token = jwtTokenProvider.createAccessToken("test@test.com");
 
         // when & then
-        assertThat(jwtTokenProvider.validateToken(token)).isTrue();
+        assertThat(jwtTokenProvider.validateToken(token, JwtTokenProvider.ACCESS)).isTrue();
+    }
+
+    @Test
+    @DisplayName("validateToken - 종류가 다른 토큰은 무효로 판단한다 (Refresh Token으로 API 인증 불가)")
+    void validateToken_wrongType_returnsFalse() {
+        String refreshToken = jwtTokenProvider.createRefreshToken("test@test.com");
+        String accessToken = jwtTokenProvider.createAccessToken("test@test.com");
+
+        assertThat(jwtTokenProvider.validateToken(refreshToken, JwtTokenProvider.ACCESS)).isFalse();
+        assertThat(jwtTokenProvider.validateToken(accessToken, JwtTokenProvider.REFRESH)).isFalse();
     }
 
     @Test
@@ -62,7 +72,7 @@ class JwtTokenProviderTest {
         String tokenFromOtherKey = otherProvider.createAccessToken("test@test.com");
 
         // when & then - 우리 provider의 key로는 검증 실패해야 함
-        assertThat(jwtTokenProvider.validateToken(tokenFromOtherKey)).isFalse();
+        assertThat(jwtTokenProvider.validateToken(tokenFromOtherKey, JwtTokenProvider.ACCESS)).isFalse();
     }
 
     @Test
@@ -73,13 +83,13 @@ class JwtTokenProviderTest {
         String expiredToken = expiredTokenProvider.createAccessToken("test@test.com");
 
         // when & then
-        assertThat(jwtTokenProvider.validateToken(expiredToken)).isFalse();
+        assertThat(jwtTokenProvider.validateToken(expiredToken, JwtTokenProvider.ACCESS)).isFalse();
     }
 
     @Test
     @DisplayName("validateToken - 아예 토큰 형식이 아닌 문자열은 무효로 판단한다")
     void validateToken_malformedString_returnsFalse() {
-        assertThat(jwtTokenProvider.validateToken("this-is-not-a-jwt")).isFalse();
+        assertThat(jwtTokenProvider.validateToken("this-is-not-a-jwt", JwtTokenProvider.ACCESS)).isFalse();
     }
 
     @Test

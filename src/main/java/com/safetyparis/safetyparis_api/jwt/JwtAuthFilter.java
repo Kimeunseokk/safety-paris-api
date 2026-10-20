@@ -30,7 +30,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // 거절(401/403)은 하지 않음 - 토큰이 없거나 무효여도 그냥 넘기고, 로그인/권한이 필요한
         // 주소인지는 SecurityConfig의 접근 규칙이 판단한다. (그래서 공개 경로 목록이 여기엔 없음)
         String token = resolveToken(request);
-        if (token != null && jwtTokenProvider.validateToken(token)) {
+        if (token != null && jwtTokenProvider.validateToken(token, JwtTokenProvider.ACCESS)) {
             String email = jwtTokenProvider.getEmail(token);
             // 토큰은 유효해도 회원이 삭제됐을 수 있으므로 없으면 등록하지 않음(= 비로그인 취급)
             userRepository.findByEmail(email).ifPresent(user -> {
