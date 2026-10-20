@@ -8,23 +8,24 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+// 관리자 API 모음 - /api/admin/** 는 SecurityConfig에서 ADMIN만 접근 가능
 @RestController
-@RequestMapping("/api/admin/reports")
+@RequestMapping("/api/admin")
 @RequiredArgsConstructor
-public class AdminReportController {
+public class AdminController {
     private final ReportService reportService;
 
-    @GetMapping // 승인대기 목록
+    @GetMapping("/reports") // 승인대기 목록
     public ResponseEntity<List<AdminResponseDto>> getPendingList() {
         return ResponseEntity.ok(reportService.getPendingList());
     }
 
-    @PatchMapping("/{id}/approve")
+    @PatchMapping("/reports/{id}/approve")
     public ResponseEntity<AdminResponseDto> approve(@PathVariable Long id) {
         return ResponseEntity.ok(reportService.approveReport(id));
     }
 
-    @PatchMapping("/{id}/reject")
+    @PatchMapping("/reports/{id}/reject")
     public ResponseEntity<AdminResponseDto> reject(@PathVariable Long id) {
         return ResponseEntity.ok(reportService.rejectReport(id));
     }
