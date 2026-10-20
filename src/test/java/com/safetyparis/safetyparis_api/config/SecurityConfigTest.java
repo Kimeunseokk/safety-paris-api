@@ -2,6 +2,7 @@ package com.safetyparis.safetyparis_api.config;
 
 import com.safetyparis.safetyparis_api.service.MarkerService;
 import com.safetyparis.safetyparis_api.service.ReportService;
+import com.safetyparis.safetyparis_api.service.UserService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,8 @@ class SecurityConfigTest {
     private ReportService reportService;
     @MockBean
     private MarkerService markerService;
+    @MockBean
+    private UserService userService;
 
     private static final String REPORT_JSON = """
             {"latitude": 48.85, "longitude": 2.29, "locationDescription": "에펠탑", "storyContent": "소매치기"}
@@ -110,5 +113,18 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
         mockMvc.perform(patch("/api/admin/reports/1/approve").with(loginAs("admin@test.com", "ADMIN")))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("회원 조회 - 비로그인 401, USER 403(다른 회원 이메일 조회 차단), ADMIN 200")
+    void adminUserLookup_onlyAdmin() throws Exception {
+        mockMvc.perform(get("/api/admin/users/1"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/users/1").with(loginAs("user@test.com", "USER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/admin/users/1").with(loginAs("admin@test.com", "ADMIN")))
+                .andExpect(status().isOk());
+
+        verify(userService).getUser(1L); // USER 요청은 서비스까지 오지 않고 ADMIN 요청 한 번만 도달
     }
 }

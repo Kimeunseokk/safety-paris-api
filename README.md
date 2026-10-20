@@ -89,7 +89,7 @@ docker compose up -d --build
 | 회원가입 | POST | `/api/users` | 불필요 |
 | 로그인 | POST | `/api/users/login` | 불필요 |
 | 토큰 재발급 | POST | `/api/users/recreate` | 불필요 (Refresh Token 제출) |
-| 회원 조회 | GET | `/api/users/{id}` | 로그인 |
+| 회원 조회 | GET | `/api/admin/users/{id}` | 관리자 |
 | 마커 목록 | GET | `/api/markers` | 불필요 |
 | 마커 상세 | GET | `/api/markers/{id}` | 불필요 |
 | 도움기관 목록 | GET | `/api/help-locations` | 불필요 |
