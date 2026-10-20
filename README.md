@@ -216,18 +216,45 @@ EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로
 
 응답 데이터는 정상 UTF-8이었지만 `Content-Type: application/json`에 charset이 없어 일부 브라우저가 다른 인코딩으로 해석했습니다. `server.servlet.encoding.force: true`로 `charset=UTF-8`을 명시해 해결했습니다.
 
+### 5. Refresh Token이 Access Token으로도 사용됨
+
+코드 리뷰에서 **Refresh Token(3일)을 `Authorization` 헤더에 넣어도 로그인이 필요한 API가 통과**한다는 지적을 받았습니다. Access Token을 15분으로 짧게 둔 의미가 없어지고, Refresh Token이 유출되면 3일 동안 API를 마음대로 호출할 수 있는 상태였습니다.
+
+| 요청 | 수정 전 | 수정 후 |
+|---|---|---|
+| Refresh Token으로 `POST /api/reports` | **201 — 인증 통과** | 401 |
+| Access Token으로 `POST /api/users/recreate` | 400 (Redis 값 비교에서 거절) | 400 (토큰 종류 검사에서 거절) |
+
+- **원인**: 두 토큰을 같은 형태(subject + 만료시간)로 만들고, `validateToken`은 서명과 만료만 확인 → 서버가 두 토큰을 구분할 방법이 없었음
+- **해결**: 발급 시 `type` claim(`access` / `refresh`)을 넣고, `validateToken(token, expectedType)`이 종류까지 확인. 필터는 `ACCESS`, 재발급은 `REFRESH`만 허용 (두 호출부가 같은 함수를 지나가므로 한 곳만 수정)
+- **배운 점**: "서명이 유효하다"와 "이 용도로 써도 된다"는 다른 검사. 같은 키로 서명하는 토큰이 여러 종류면 용도를 토큰 안에 명시해야 함
+
+### 6. 일반 회원이 다른 회원의 이메일을 조회할 수 있음 (IDOR)
+
+`GET /api/users/{id}`가 로그인 여부만 확인해서, 일반 회원이 `id`를 1, 2, 3… 순서대로 바꿔가며 **전체 회원의 이메일을 조회**할 수 있었습니다.
+
+| 요청 | 수정 전 | 수정 후 |
+|---|---|---|
+| USER 토큰으로 `GET /api/users/2` (다른 회원) | **200 — 이메일 노출** | 경로 삭제 |
+| USER 토큰으로 `GET /api/admin/users/2` | — | 403 |
+| ADMIN 토큰으로 `GET /api/admin/users/2` | — | 200 |
+
+- **원인**: 원래 관리자가 회원을 조회하려고 만든 API인데 `/api/users/**`에 있어서 `anyRequest().authenticated()`(로그인만 확인) 규칙이 적용됨
+- **해결**: `/api/admin/users/{id}`로 옮겨 기존 `/api/admin/**` → `hasRole("ADMIN")` 규칙을 그대로 적용. 관리자 API는 `AdminController` 하나로 모아, 새 관리자 기능도 같은 규칙을 자동으로 받게 함
+- **배운 점**: "로그인했는가(인증)"와 "이 데이터를 볼 권한이 있는가(인가)"는 별개. API를 만들 때 경로가 어떤 접근 규칙에 걸리는지 함께 확인해야 함
+
 ## 테스트
 
-단위 테스트 + MockMvc 통합 테스트 **34개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
+단위 테스트 + MockMvc 통합 테스트 **36개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
 
 | 테스트 | 확인하는 것 |
 |---|---|
 | `UserServiceTest` | 회원가입·로그인·토큰 재발급 성공/실패 |
-| `JwtTokenProviderTest` | 토큰 생성·검증·만료 |
+| `JwtTokenProviderTest` | 토큰 생성·검증·만료, 다른 종류(access/refresh) 토큰 거절 |
 | `JwtAuthFilterTest` | 유효한 토큰일 때만 SecurityContext에 사용자·권한 등록 |
 | `ReportServiceTest` | 승인 시 Marker 저장, 거절 시 저장 안 함, 재승인 차단 |
 | `MarkerServiceTest` | 없는 마커 조회 시 404 |
-| `SecurityConfigTest` | URL별 접근 규칙(공개/401/403/통과), 세미콜론 주소 우회 차단 |
+| `SecurityConfigTest` | URL별 접근 규칙(공개/401/403/통과), 세미콜론 주소 우회 차단, 회원 조회 관리자 전용 |
 
 ## 향후 개선
 
