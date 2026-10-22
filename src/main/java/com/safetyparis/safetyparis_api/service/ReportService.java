@@ -36,7 +36,8 @@ public class ReportService {
 
     // 처리 진행중 목록 조회
     public List<AdminResponseDto> getPendingList() {
-        return reportRepository.findByStatus(ReportStatus.PENDING).stream()
+        return reportRepository.findByStatus(ReportStatus.PENDING)
+                .stream()
                 .map(AdminResponseDto::new)
                 .toList();
     }
