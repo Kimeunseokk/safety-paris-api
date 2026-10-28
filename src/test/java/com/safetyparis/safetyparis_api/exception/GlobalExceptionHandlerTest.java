@@ -79,4 +79,22 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("요청 형식이 올바르지 않습니다."));
     }
+
+    @Test
+    @DisplayName("경로 변수 타입 오류 - 400 + JSON 메시지 (이전엔 Spring 기본 형식)")
+    void pathVariableTypeMismatch_400_json() throws Exception {
+        mockMvc.perform(get("/api/markers/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.message").exists());
+    }
+
+    @Test
+    @DisplayName("없는 주소 - 404 + JSON 메시지 (이전엔 Spring 기본 형식)")
+    void unknownPath_404_json() throws Exception {
+        mockMvc.perform(get("/api/users/2"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.message").exists());
+    }
 }
