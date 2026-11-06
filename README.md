@@ -1,102 +1,348 @@
-# Safety-Paris API
+# 🗼 Safety-Paris API
 
 [![CI](https://github.com/Kimeunseokk/safety-paris-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Kimeunseokk/safety-paris-api/actions/workflows/ci.yml)
+![Java](https://img.shields.io/badge/Java%2021-007396?style=flat-square&logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot%203.3-6DB33F?style=flat-square&logo=springboot&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=flat-square&logo=mysql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
-파리 여행 중 소매치기 등 경범죄 정보를 사용자들이 제보·공유하여 예방에 기여하는 웹 서비스의 백엔드 API입니다.
+> 파리 여행 중 소매치기 등 경범죄 정보를 사용자들이 **제보·공유**하고, 관리자가 승인한 제보를 **지도에 공개**하는 웹 서비스의 백엔드 API입니다.
 
-> 원본 기획: `소프트웨어공학_계획서.pdf` (SRS) 기반으로 재설계
+| 기간 | 인원 | 역할 | 원본 기획 |
+|---|---|---|---|
+| 2026.09 ~ 2026.10 | 1인 | 설계 · 구현 · 테스트 · 배포 | 2024년 4인 팀 프로젝트의 SRS·설계 문서 |
 
-## 배포
+> [!NOTE]
+> 비용 문제로 배포 서버(AWS EC2)를 중지했습니다. 테스트(CI)는 push마다 계속 실행되며, API는 [로컬 실행](#-로컬-실행) 후 Swagger UI에서 확인할 수 있습니다.
 
-> ⚠️ 현재  **배포 서버(AWS EC2)를 중지**해 아래 주소는 열리지 않습니다. CI/CD의 자동 배포 단계도 함께 꺼 두었고, 테스트(CI)는 push마다 계속 실행됩니다.
+<br>
 
-- **API 기본 주소**: `http://13.209.19.229:8080` (루트 `/`는 API가 없어 401 응답 — 아래 공개 API로 확인)
-- **API 문서 (Swagger UI)**: http://13.209.19.229:8080/swagger-ui/index.html — 브라우저에서 전체 API 명세를 보고 직접 호출 가능 (서버 중지 중)
-- 바로 확인해 볼 수 있는 공개 API (로그인 불필요)
-  - 마커 목록: http://13.209.19.229:8080/api/markers
-  - 마커 상세: http://13.209.19.229:8080/api/markers/1
-  - 도움기관 목록: http://13.209.19.229:8080/api/help-locations
-- 운영 DB의 마커는 실제 흐름(회원가입 → 제보 → 관리자 승인)으로 만든 **예시 데이터**입니다 (`[예시]` 표시)
+## 📌 핵심 성과
 
-## 주요 기능
+| 구분 | 내용 | 결과 |
+|---|---|---|
+| 🔐 보안 | 인증·인가 취약점 3건 재현 및 수정 | 관리자 경로 우회 · Refresh Token 오용 · IDOR 차단 |
+| ⚡ 성능 | 관리자 대기 목록 N+1 쿼리 개선 | 요청당 SQL **13회 → 2회** |
+| ⚡ 성능 | 마커 목록 Redis 캐싱 | 평균 응답 **8.95ms → 3.52ms** (약 60% 단축), 처리량 약 2.5배 |
+| ✅ 품질 | 단위·통합 테스트를 CI에서 자동 실행 | 테스트 **42개** |
+| 🚀 배포 | GitHub Actions → GHCR → EC2 자동 배포 | 1GB 서버 제약에 맞춰 빌드와 실행 분리 |
+
+<br>
+
+## 📑 목차
+
+- [주요 기능](#-주요-기능)
+- [아키텍처](#-아키텍처)
+- [기술 스택](#-기술-스택)
+- [설계 결정](#-설계-결정)
+- [트러블슈팅](#-트러블슈팅)
+- [성능 개선](#-성능-개선)
+- [테스트](#-테스트)
+- [로컬 실행](#-로컬-실행)
+- [API 명세](#-api-명세)
+- [향후 개선](#-향후-개선)
+
+<br>
+
+## ✨ 주요 기능
 
 **핵심 흐름**: 사용자 제보 → `Report` 저장(`PENDING`) → 관리자 검토 → 승인 시 `Marker`로 전환되어 지도에 노출
 
+```mermaid
+sequenceDiagram
+    actor U as 사용자
+    actor A as 관리자
+    participant API as Safety-Paris API
+    participant DB as MySQL
+    participant C as Redis
+
+    U->>API: POST /api/reports (제보)
+    API->>DB: Report 저장 (PENDING)
+    A->>API: PATCH /api/admin/reports/{id}/approve
+    API->>DB: Report → APPROVED, Marker 생성 (한 트랜잭션)
+    API->>C: 마커 목록 캐시 무효화
+    U->>API: GET /api/markers (지도 조회)
+    API->>C: 캐시 조회 (없으면 DB에서 읽어 저장)
+```
+
 | 도메인 | 설명 | 기능 |
 |---|---|---|
-| User | 회원. `role`(`USER`/`ADMIN`)로 일반/관리자 구분 | 회원가입(BCrypt), 로그인(JWT Access/Refresh), 토큰 재발급(Redis 대조), 회원 조회 |
-| Report | 사용자가 보낸 원본 제보 (승인 전 `PENDING`) | 제보 등록(로그인 회원만), 관리자 대기 목록·승인·거절 |
-| Marker | 관리자가 승인해 지도에 노출되는 범죄 지점 | 목록·상세 조회(로그인 불필요), 목록은 Redis 캐싱 |
-| HelpLocation | 대사관·경찰서 등 도움받을 수 있는 기관 | 목록 조회(로그인 불필요) |
+| **User** | 회원. `role`(`USER`/`ADMIN`)로 일반/관리자 구분 | 회원가입(BCrypt), 로그인(JWT Access/Refresh), 토큰 재발급(Redis 대조), 회원 조회(관리자) |
+| **Report** | 사용자가 보낸 원본 제보 (승인 전 `PENDING`) | 제보 등록(로그인 회원만), 관리자 대기 목록·승인·거절 |
+| **Marker** | 관리자가 승인해 지도에 노출되는 범죄 지점 | 목록·상세 조회(로그인 불필요), 목록은 Redis 캐싱 |
+| **HelpLocation** | 대사관·경찰서 등 도움받을 수 있는 기관 | 목록 조회(로그인 불필요) |
 
-- 인상착의 필드는 전부 선택 입력 — 피해자가 기억하지 못할 수 있음을 고려
-- 마커 수정·삭제 API를 제공하지 않아 "임의 수정 방지" 요구사항 충족 (Marker는 관리자 승인으로만 생성)
+- 인상착의 필드는 전부 선택 입력: 피해자가 기억하지 못할 수 있음을 고려
+- 마커 수정·삭제 API를 두지 않아 "임의 수정 방지" 요구사항 충족 (Marker는 관리자 승인으로만 생성)
 
-## 기술 스택
+<br>
+
+## 🏗 아키텍처
+
+```mermaid
+flowchart LR
+    Client([Client])
+
+    subgraph EC2["AWS EC2 (1GB) · Docker Compose"]
+        App["Spring Boot<br/>:8080"]
+        MySQL[("MySQL")]
+        Redis[("Redis")]
+    end
+
+    subgraph CICD["GitHub Actions"]
+        Test["test<br/>MySQL·Redis 컨테이너로 전체 테스트"]
+        Build["deploy<br/>linux/amd64 이미지 빌드"]
+    end
+
+    GHCR[("GHCR")]
+
+    Client -->|HTTP| App
+    App --> MySQL
+    App --> Redis
+    Test -->|성공 시| Build
+    Build -->|latest + 커밋 해시 태그| GHCR
+    GHCR -->|SSH로 pull 후 앱 컨테이너만 교체| App
+```
+
+- 외부에는 `8080`만 공개하고, MySQL·Redis는 컨테이너 내부 네트워크에서만 접근
+- 개발/운영 설정 분리: `application-dev.yml`(`ddl-auto: update`) / `application-prod.yml`(`ddl-auto: validate`, DB 비밀번호·JWT 키는 환경변수로 주입)
+- DB 스키마와 기준 데이터(도움기관)는 Flyway(`db/migration`)로 관리 → 빈 DB에도 앱 시작 시 자동 적용
+- 이미지를 커밋 해시로도 태깅해, 문제가 생기면 `IMAGE_TAG=<커밋 해시> docker compose up -d`로 이전 버전 복구
+- 서버의 GHCR 로그인은 배포 중에만 유지하고 끝나면 로그아웃 (서버에 자격증명을 남기지 않음)
+- 현재는 서버 중지로 `deploy` 작업을 꺼 둔 상태 (`ci.yml`의 `if: false`), `test`만 실행
+
+<br>
+
+## 🛠 기술 스택
 
 | 분류 | 기술 |
 |---|---|
 | Language / Framework | Java 21, Spring Boot 3.3.0, Spring Web, Spring Data JPA |
 | 보안 | Spring Security (JWT 인증 필터, URL별 접근 제어), JWT (jjwt), BCrypt |
-| DB / Cache | MySQL, Redis (Refresh Token 저장, 마커 목록 캐싱), Flyway (스키마·기준 데이터 버전 관리) |
+| DB / Cache | MySQL, Redis (Refresh Token 저장, 마커 목록 캐싱), Flyway |
 | 테스트 | JUnit 5, Mockito, AssertJ, MockMvc, spring-security-test |
 | 인프라 / 배포 | Docker, Docker Compose, AWS EC2, GitHub Actions (CI/CD), GHCR |
 | API 문서 | springdoc-openapi (Swagger UI) |
 | 기타 | Lombok, Bean Validation, spring-dotenv |
 
-## 아키텍처 및 배포
+<br>
 
-### 구성
+## 🧭 설계 결정
 
-- AWS EC2 1대(1GB)에 Docker Compose로 Spring Boot + MySQL + Redis 실행
-- 외부에는 8080만 공개, MySQL·Redis는 컨테이너 내부 네트워크에서만 접근
-- 개발/운영 설정 분리: `application-dev.yml`(`ddl-auto: update`) / `application-prod.yml`(`ddl-auto: validate`, DB 주소·비밀번호·JWT 키는 환경변수로 주입)
-- DB 스키마와 기준 데이터(도움기관)는 Flyway(`db/migration`)로 관리 → 빈 DB에도 앱 시작 시 자동 적용
+| 결정 | 이유 |
+|---|---|
+| **Report와 Marker 테이블 분리** | 지도 조회는 승인된 데이터만 담긴 `markers`만 읽어, 승인 전 제보가 실수로 노출될 여지를 구조적으로 없앰 |
+| **승인은 하나의 트랜잭션** | 상태 변경(`APPROVED`)과 Marker 생성을 묶어 어긋난 데이터가 생기지 않게 함 |
+| **중복 승인 방지** | `Report.approve()`/`reject()`가 `PENDING`일 때만 상태를 바꿈 → 같은 제보를 두 번 승인해도 마커가 중복 생성되지 않음 |
+| **로그인 필수 제보** | 익명 대신 작성자를 남겨 장난성 제보를 추적 (장난성 제보는 관리자 거절로 처리) |
+| **마커 목록 캐싱** | 지도를 열 때마다 조회하지만 승인 때만 바뀌는 데이터 → `@Cacheable`로 캐싱, 승인 시 `@CacheEvict`로 무효화 |
+| **관리자 계정은 DB에서 지정** | 일반 회원가입 후 DB에서 role 변경 → 회원가입으로 관리자가 될 수 없게 함 |
+| **role은 요청마다 DB에서 조회** | JWT에 role을 넣지 않아 권한 변경이 즉시 반영됨. 트래픽이 커지면 role을 JWT에 넣고 Redis 블랙리스트로 변경을 반영하는 방식을 고려 |
+| **운영은 `validate` + Flyway** | 앱이 운영 테이블을 임의로 바꾸지 않고, 스키마 변경 이력을 SQL 파일로 관리 |
 
-### CI/CD (GitHub Actions)
+<br>
 
-```
-main에 push
- ├─ test   : MySQL·Redis 컨테이너를 띄워 전체 테스트 실행 → 실패하면 여기서 중단(배포 안 됨)
- └─ deploy : linux/amd64 이미지 빌드 → GHCR에 latest + 커밋 해시 태그로 업로드
-             → SSH로 EC2 접속 → 새 이미지 pull → 앱 컨테이너만 교체 → 헬스 체크
-```
+## 🔥 트러블슈팅
 
-- 현재는 서버를 중지해 `deploy` 작업을 꺼 둔 상태 (`ci.yml`의 `if: false`), `test`만 실행
-- 서버의 GHCR 로그인은 배포 중에만 유지하고 끝나면 로그아웃 (서버에 자격증명을 남기지 않음)
-- 이미지를 커밋 해시로도 태깅해, 문제가 생기면 `IMAGE_TAG=<커밋 해시> docker compose up -d`로 이전 버전 복구
+| # | 문제 | 원인 | 해결 |
+|---|---|---|---|
+| 1 | 일반 회원이 관리자 API 호출 가능 | 직접 만든 필터와 Spring MVC의 주소 해석 차이 (`;`) | Spring Security 전환, 회귀 테스트 |
+| 2 | Refresh Token으로 일반 API 통과 | 두 토큰을 구분할 정보가 없음 | `type` claim 검증 |
+| 3 | 다른 회원의 이메일 조회 가능 (IDOR) | 관리자용 API가 관리자 경로 밖에 있음 | `/api/admin/**`로 이동 |
+| 4 | 1GB 서버에서 빌드 불가 | 메모리·디스크 부족 | 빌드(GitHub Actions)와 실행(EC2) 분리 |
+| 5 | 저장 시각이 9시간 어긋남 | 컨테이너 기본 시간대 UTC | `TZ=Asia/Seoul` |
+| 6 | 브라우저에서 JSON 한글 깨짐 | `Content-Type`에 charset 없음 | `charset=UTF-8` 명시 |
 
-### 로컬 실행
+<details>
+<summary><b>1. 직접 구현한 JWT 필터의 관리자 권한 우회 → Spring Security 전환</b></summary>
+<br>
+
+처음에는 JWT 인증 원리를 이해하기 위해 Spring Security 없이 `OncePerRequestFilter`를 상속한 `JwtAuthFilter` 하나로 인증과 인가를 직접 구현했습니다. 새 API마다 공개 경로 목록을 직접 고쳐야 해서 마커 상세 조회를 빠뜨려 401이 나는 버그도 있었고, 관리자 기능까지 완성한 뒤 Spring Security로 전환했습니다.
+
+**문제**: 전환하며 기존 필터를 다시 점검하다가 **일반 회원이 관리자 API를 호출할 수 있는 구멍**을 발견했습니다. 전환 직전 코드를 따로 띄워 일반 회원(USER) 토큰으로 확인한 결과입니다.
+
+| 요청 | 전환 전 (직접 구현 필터) | 전환 후 (Spring Security) |
+|---|---|---|
+| `GET /api/admin/reports` | 403 | 403 |
+| `GET /api/admin;x=1/reports` | **200 — 우회됨** | 400 — 차단 |
+| `PATCH /api/admin;x=1/reports/{id}/approve` | **200 — 일반 회원이 자기 제보를 승인** | 400 — 차단 |
+
+- **원인**: 필터는 주소를 문자열로 비교(`uri.startsWith("/api/admin/")`)했는데, Spring MVC는 `;` 뒷부분(매트릭스 변수)을 무시하고 컨트롤러를 찾음 → **필터와 Spring MVC가 해석하는 주소가 달라** 관리자 검사를 건너뜀
+- **해결**: Spring Security의 기본 `StrictHttpFirewall`이 `;`, 인코딩된 `/`, `..` 같은 주소를 요청 단계에서 거절(400). 이 경우를 회귀 테스트(`SecurityConfigTest`)로 고정
+- **배운 점**: 보안 로직을 직접 구현하면 주소 정규화 같은 세부 사항을 놓치기 쉽고, 이런 부분을 검증된 프레임워크에 맡기는 이유를 직접 확인
+
+**전환 후 구조**
+
+| 역할 | 전환 전 | 전환 후 |
+|---|---|---|
+| 토큰 검증 → 사용자 식별 | `JwtAuthFilter` | `JwtAuthFilter` (SecurityContext에 사용자·권한 등록만) |
+| 공개 / 로그인 필요 / 관리자 전용 규칙 | 필터 안의 `Set`과 `if`문 | `SecurityConfig`에 선언 (`permitAll`, `authenticated`, `hasRole("ADMIN")`) |
+| 401 / 403 응답 | 필터에서 직접 작성 | `AuthenticationEntryPoint` / `AccessDeniedHandler` |
+| 컨트롤러로 사용자 전달 | `request.setAttribute("email")` | `@AuthenticationPrincipal` |
+
+- 공개 경로에 HTTP 메서드까지 지정해 더 엄격해짐 (이전엔 `/api/users`가 모든 메서드에 열려 있었으나 이제 회원가입 POST만 공개)
+- 정상 요청의 응답(상태 코드, 메시지)은 전환 전과 동일하게 유지해 클라이언트 영향 없음
+- 주의한 점: `@Component` 필터의 서블릿 필터 중복 등록 방지, `/error` 경로 허용(막으면 400이 401로 바뀜), `hasRole`의 `ROLE_` 접두사
+
+</details>
+
+<details>
+<summary><b>2. Refresh Token이 Access Token으로도 사용됨</b></summary>
+<br>
+
+AI 코드 리뷰에서 **Refresh Token(3일)을 `Authorization` 헤더에 넣어도 로그인이 필요한 API가 통과**한다는 지적을 받고, 직접 재현해 확인했습니다. Access Token을 15분으로 짧게 둔 의미가 없어지고, Refresh Token이 유출되면 3일 동안 API를 마음대로 호출할 수 있는 상태였습니다.
+
+| 요청 | 수정 전 | 수정 후 |
+|---|---|---|
+| Refresh Token으로 `POST /api/reports` | **201 — 인증 통과** | 401 |
+| Access Token으로 `POST /api/users/recreate` | 400 (Redis 값 비교에서 거절) | 400 (토큰 종류 검사에서 거절) |
+
+- **원인**: 두 토큰을 같은 형태(subject + 만료시간)로 만들고, `validateToken`은 서명과 만료만 확인 → 서버가 두 토큰을 구분할 방법이 없었음
+- **해결**: 발급 시 `type` claim(`access` / `refresh`)을 넣고, `validateToken(token, expectedType)`이 종류까지 확인. 필터는 `ACCESS`, 재발급은 `REFRESH`만 허용 (두 호출부가 같은 함수를 지나가므로 한 곳만 수정)
+- **배운 점**: "서명이 유효하다"와 "이 용도로 써도 된다"는 다른 검사. 같은 키로 서명하는 토큰이 여러 종류면 용도를 토큰 안에 명시해야 함
+
+</details>
+
+<details>
+<summary><b>3. 일반 회원이 다른 회원의 이메일을 조회할 수 있음 (IDOR)</b></summary>
+<br>
+
+`GET /api/users/{id}`가 로그인 여부만 확인해서, 일반 회원이 `id`를 1, 2, 3… 순서대로 바꿔가며 **전체 회원의 이메일을 조회**할 수 있었습니다.
+
+| 요청 | 수정 전 | 수정 후 |
+|---|---|---|
+| USER 토큰으로 `GET /api/users/2` (다른 회원) | **200 — 이메일 노출** | 경로 삭제 |
+| USER 토큰으로 `GET /api/admin/users/2` | — | 403 |
+| ADMIN 토큰으로 `GET /api/admin/users/2` | — | 200 |
+
+- **원인**: 원래 관리자가 회원을 조회하려고 만든 API인데 `/api/users/**`에 있어서 `anyRequest().authenticated()`(로그인만 확인) 규칙이 적용됨
+- **해결**: `/api/admin/users/{id}`로 옮겨 기존 `/api/admin/**` → `hasRole("ADMIN")` 규칙을 그대로 적용. 관리자 API는 `AdminController` 하나로 모아, 새 관리자 기능도 같은 규칙을 자동으로 받게 함 ([#1](https://github.com/Kimeunseokk/safety-paris-api/pull/1) 구조 정리 → [#2](https://github.com/Kimeunseokk/safety-paris-api/pull/2) 보안 수정)
+- **배운 점**: "로그인했는가(인증)"와 "이 데이터를 볼 권한이 있는가(인가)"는 별개. API를 만들 때 경로가 어떤 접근 규칙에 걸리는지 함께 확인해야 함
+
+</details>
+
+<details>
+<summary><b>4. 1GB 서버의 메모리·디스크 한계 → 빌드와 실행 분리</b></summary>
+<br>
+
+EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로도 빠듯해, 서버에서 Gradle로 이미지까지 빌드하기엔 메모리와 디스크가 부족했습니다. 서버를 키우는 대신 **빌드는 GitHub Actions에서 하고 서버는 GHCR에서 이미지를 받아 실행만** 하도록 분리했고, 이 구조가 그대로 자동 배포(CD)로 이어졌습니다. 개발 Mac(ARM)과 서버(x86_64)의 CPU 아키텍처가 달라 이미지는 `linux/amd64`로 빌드합니다.
+
+</details>
+
+<details>
+<summary><b>5. 컨테이너에서 <code>createdAt</code>이 실제보다 9시간 이른 시각으로 저장</b></summary>
+<br>
+
+로컬에서 운영과 같은 구성을 Docker Compose로 띄워 검증하던 중, 12시에 등록한 제보의 시각이 03시로 저장되는 것을 발견했습니다. 컨테이너의 기본 시간대가 UTC라 `LocalDateTime.now()`가 UTC 기준이었기 때문으로, 앱 컨테이너에 `TZ=Asia/Seoul`을 지정해 해결했습니다. 배포 전에 운영과 같은 환경을 먼저 띄워 본 덕분에 운영 데이터가 틀어지기 전에 잡았습니다.
+
+</details>
+
+<details>
+<summary><b>6. 브라우저에서 JSON 한글이 깨져 보임</b></summary>
+<br>
+
+응답 데이터는 정상 UTF-8이었지만 `Content-Type: application/json`에 charset이 없어 일부 브라우저가 다른 인코딩으로 해석했습니다. `server.servlet.encoding.force: true`로 `charset=UTF-8`을 명시해 해결했습니다.
+
+</details>
+
+<br>
+
+## ⚡ 성능 개선
+
+<details>
+<summary><b>관리자 대기 제보 목록의 N+1 쿼리: 요청당 SQL 13회 → 2회</b></summary>
+<br>
+
+관리자 대기 목록(`GET /api/admin/reports`)에서 제보 목록 쿼리 1번 뒤에 **제보마다 작성자 조회 쿼리가 하나씩 더** 실행됐습니다.
+
+- **원인**: `Report.user`가 지연 로딩(`LAZY`)이라, 응답 DTO를 만들며 `report.getUser().getNickname()`을 부를 때마다 작성자를 따로 조회
+- **해결**: 엔티티의 `LAZY`는 그대로 두고, 작성자가 필요한 이 조회에만 `@EntityGraph(attributePaths = "user")`로 함께 조회
+  - `EAGER`는 목록 조회에서 같은 문제가 생기고 제보를 조회하는 모든 곳에 적용되어 제외
+  - 캐시는 대기 목록이 제보·승인·거절 때마다 바뀌고 관리자만 호출해 효과가 적어 제외
+
+**측정** (로컬, 서로 다른 작성자의 PENDING 제보 11건, Hibernate SQL 로그)
+
+| 쿼리 | 수정 전 | 수정 후 |
+|---|---|---|
+| 관리자 확인 (인증 필터, N+1과 무관) | 1 | 1 |
+| 제보 목록 | 1 (`reports`만) | 1 (`reports join users`) |
+| 작성자 조회 `users where id=?` | **11** | **0** |
+| **합계** | **13** | **2** |
+
+</details>
+
+<details>
+<summary><b>마커 목록 Redis 캐싱: 평균 응답 8.95ms → 3.52ms</b></summary>
+<br>
+
+마커 목록은 모든 사용자가 지도를 열 때마다 조회하지만, 관리자 승인 때만 바뀝니다. 수정·삭제 API도 없어 캐시를 비워야 하는 시점이 승인 하나뿐이라 `@Cacheable("markers")`로 캐싱하고, 승인 시 `@CacheEvict(allEntries = true)`로 무효화했습니다.
+
+**측정** (로컬, 마커 1,000개, ApacheBench, 워밍업 100건 후 요청 1,000건(동시 1)씩 3회 평균)
+
+| | 캐싱 전 | 캐싱 후 |
+|---|---|---|
+| 평균 응답 시간 | 8.954ms | **3.524ms** (약 60.6% 단축) |
+| 처리량 | 114.39 req/s | **291.40 req/s** (약 2.5배) |
+
+- 두 상태 모두 회차가 갈수록 빨라졌습니다. JVM JIT 최적화가 워밍업 100건으로 끝나지 않은 영향으로 보고, 3회 평균으로 비교했습니다.
+- 아직 검증하지 않은 것: 운영 서버(EC2)에서의 측정, 조회와 승인이 동시에 일어날 때 옛 목록이 캐시에 저장될 수 있는 경합
+
+</details>
+
+<br>
+
+## 🧪 테스트
+
+단위 테스트 + MockMvc 통합 테스트 **42개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
+
+| 테스트 | 확인하는 것 |
+|---|---|
+| `UserServiceTest` | 회원가입·로그인·토큰 재발급 성공/실패 |
+| `JwtTokenProviderTest` | 토큰 생성·검증·만료, 다른 종류(access/refresh) 토큰 거절 |
+| `JwtAuthFilterTest` | 유효한 토큰일 때만 SecurityContext에 사용자·권한 등록 |
+| `ReportServiceTest` | 승인 시 Marker 저장, 거절 시 저장 안 함, 재승인 차단 |
+| `MarkerServiceTest` | 없는 마커 조회 시 404 |
+| `SecurityConfigTest` | URL별 접근 규칙(공개/401/403/통과), 세미콜론 주소 우회 차단, 회원 조회 관리자 전용 |
+| `GlobalExceptionHandlerTest` | 예외별 JSON 에러 응답 (400·404, 검증 실패 메시지, 깨진 JSON) |
+
+<br>
+
+## 🚀 로컬 실행
 
 ```bash
-# 운영과 같은 구성(앱 + MySQL + Redis)으로 실행 — .env의 DB_PASSWORD, JWT_SECRET_KEY 사용
+# 1. 프로젝트 루트에 .env 작성
+DB_PASSWORD=원하는_비밀번호
+JWT_SECRET_KEY=base64_인코딩된_키   # openssl rand -base64 64 로 생성
+
+# 2. 운영과 같은 구성(앱 + MySQL + Redis)으로 실행
 docker compose up -d --build
 
-# 테스트 (MySQL·Redis 필요)
+# 3. 테스트 (MySQL·Redis 필요)
 ./gradlew test
 ```
 
-## API 명세
+실행 후 Swagger UI: http://localhost:8080/swagger-ui/index.html
 
-전체 명세와 요청/응답 형식은 **Swagger UI**에서 확인하고 바로 호출해 볼 수 있습니다.
+<br>
 
-- 배포 서버: http://13.209.19.229:8080/swagger-ui/index.html (현재 서버 중지 중)
-- 로컬: http://localhost:8080/swagger-ui/index.html
-- springdoc이 컨트롤러·DTO(검증 어노테이션 포함)를 읽어 OpenAPI 명세(`/v3/api-docs`)를 자동 생성 → 코드와 문서가 항상 일치
+## 📖 API 명세
+
+전체 명세와 요청/응답 형식은 **Swagger UI**에서 확인하고 바로 호출해 볼 수 있습니다. springdoc이 컨트롤러·DTO(검증 어노테이션 포함)를 읽어 명세를 자동 생성하므로 코드와 문서가 항상 일치합니다.
 
 | 기능 | Method | Endpoint | 인증 |
 |---|---|---|---|
-| 회원가입 | POST | `/api/users` | 불필요 |
-| 로그인 | POST | `/api/users/login` | 불필요 |
-| 토큰 재발급 | POST | `/api/users/recreate` | 불필요 (Refresh Token 제출) |
-| 회원 조회 | GET | `/api/admin/users/{id}` | 관리자 |
-| 마커 목록 | GET | `/api/markers` | 불필요 |
-| 마커 상세 | GET | `/api/markers/{id}` | 불필요 |
-| 도움기관 목록 | GET | `/api/help-locations` | 불필요 |
-| 제보 등록 | POST | `/api/reports` | 로그인 |
-| 대기 제보 목록 | GET | `/api/admin/reports` | 관리자 |
-| 제보 승인 | PATCH | `/api/admin/reports/{id}/approve` | 관리자 |
-| 제보 거절 | PATCH | `/api/admin/reports/{id}/reject` | 관리자 |
+| 회원가입 | `POST` | `/api/users` | 불필요 |
+| 로그인 | `POST` | `/api/users/login` | 불필요 |
+| 토큰 재발급 | `POST` | `/api/users/recreate` | 불필요 (Refresh Token 제출) |
+| 회원 조회 | `GET` | `/api/admin/users/{id}` | 관리자 |
+| 마커 목록 | `GET` | `/api/markers` | 불필요 |
+| 마커 상세 | `GET` | `/api/markers/{id}` | 불필요 |
+| 도움기관 목록 | `GET` | `/api/help-locations` | 불필요 |
+| 제보 등록 | `POST` | `/api/reports` | 로그인 |
+| 대기 제보 목록 | `GET` | `/api/admin/reports` | 관리자 |
+| 제보 승인 | `PATCH` | `/api/admin/reports/{id}/approve` | 관리자 |
+| 제보 거절 | `PATCH` | `/api/admin/reports/{id}/reject` | 관리자 |
 
 - 인증 실패 401 `{"message": "인증이 필요합니다."}`, 권한 부족 403 `{"message": "관리자 권한이 필요합니다."}`
 - 로그인이 필요한 요청은 `Authorization: Bearer <accessToken>` 헤더 사용
@@ -162,103 +408,12 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
 ```
 </details>
 
-## 설계 결정
+<br>
 
-- **Report와 Marker 테이블 분리**: 지도 조회는 승인된 데이터만 담긴 `markers`만 읽으므로, 승인 전 제보가 실수로 노출될 여지가 구조적으로 없음
-- **승인은 하나의 트랜잭션**: 상태 변경(`APPROVED`)과 Marker 생성을 한 트랜잭션으로 묶어 어긋난 데이터가 생기지 않게 함
-- **중복 승인 방지**: `Report.approve()`/`reject()`가 `PENDING`일 때만 상태를 바꾸도록 엔티티에서 검사 → 같은 제보를 두 번 승인해도 마커가 중복 생성되지 않음
-- **로그인 필수 제보**: 익명 제보 대신 작성자를 남겨 장난성 제보 추적 가능 (장난성 제보는 관리자 거절로 처리)
-- **마커 목록 캐싱**: 모든 사용자가 지도를 열 때마다 조회하지만 관리자 승인 때만 바뀌는 데이터라 Redis에 캐싱(`@Cacheable`), 승인 시 `@CacheEvict`로 무효화
-- **관리자 계정**: 일반 회원가입 후 DB에서 role을 직접 변경해 지정 — 회원가입으로 관리자가 될 수 없게 함
-- **role은 DB에서 조회**: JWT에 role을 넣지 않고 인증된 요청마다 DB에서 조회 → 권한 변경이 즉시 반영됨 (트래픽이 많아지면 JWT에 포함 고려)
-- **운영은 `ddl-auto: validate` + Flyway**: 앱이 운영 테이블을 임의로 바꾸지 않고, 스키마 변경 이력을 SQL 파일로 관리
+## 🔜 향후 개선
 
-## 트러블슈팅
-
-### 1. 직접 구현한 JWT 필터의 관리자 권한 우회 → Spring Security 전환
-
-처음에는 JWT 인증 원리를 이해하기 위해 Spring Security 없이 `OncePerRequestFilter`를 상속한 `JwtAuthFilter` 하나로 인증과 인가를 직접 구현했습니다. 공개 경로 목록(`PUBLIC_PATHS`), 401/403 응답 작성, `/api/admin/**`의 role 검사까지 모두 이 필터가 맡았고, 새 API마다 공개 목록을 직접 고쳐야 해서 마커 상세 조회를 빠뜨려 401이 나는 버그도 있었습니다. 관리자 기능까지 완성한 뒤 실무 표준인 Spring Security로 전환했습니다.
-
-**전환하며 발견한 문제**: 기존 필터를 다시 점검하다가 **일반 회원이 관리자 API를 호출할 수 있는 구멍**을 발견했습니다. 전환 직전 코드를 따로 띄워 일반 회원(USER) 토큰으로 확인한 결과:
-
-| 요청 | 전환 전 (직접 구현 필터) | 전환 후 (Spring Security) |
-|---|---|---|
-| `GET /api/admin/reports` | 403 | 403 |
-| `GET /api/admin;x=1/reports` | **200 — 우회됨** | 400 — 차단 |
-| `PATCH /api/admin;x=1/reports/{id}/approve` | **200 — 일반 회원이 자기 제보를 승인, 지도에 마커 생성** | 400 — 차단 |
-
-- **원인**: 필터는 주소를 문자열로 비교(`uri.startsWith("/api/admin/")`)했는데, Spring MVC는 `;` 뒷부분(매트릭스 변수)을 무시하고 컨트롤러를 찾음 → **필터와 Spring MVC가 해석하는 주소가 달라서** 관리자 검사를 건너뜀
-- **해결**: Spring Security의 기본 `StrictHttpFirewall`이 `;`, 인코딩된 `/`, `..` 같은 주소를 요청 단계에서 거절(400). 이 경우를 회귀 테스트(`SecurityConfigTest`)로 고정
-- **배운 점**: 보안 로직을 직접 구현하면 주소 정규화 같은 세부 사항을 놓치기 쉽고, 이런 부분을 검증된 프레임워크에 맡기는 이유를 직접 확인
-
-**전환 후 구조**
-
-| 역할 | 전환 전 | 전환 후 |
-|---|---|---|
-| 토큰 검증 → 사용자 식별 | `JwtAuthFilter` | `JwtAuthFilter` (SecurityContext에 사용자·권한 등록만) |
-| 공개 / 로그인 필요 / 관리자 전용 규칙 | 필터 안의 `Set`과 `if`문 | `SecurityConfig`에 선언 (`permitAll`, `authenticated`, `hasRole("ADMIN")`) |
-| 401 / 403 응답 | 필터에서 직접 작성 | `AuthenticationEntryPoint` / `AccessDeniedHandler` |
-| 컨트롤러로 사용자 전달 | `request.setAttribute("email")` | `@AuthenticationPrincipal` |
-
-- 공개 경로에 HTTP 메서드까지 지정해 더 엄격해짐 (이전엔 `/api/users`가 모든 메서드에 열려 있었으나 이제 회원가입 POST만 공개)
-- 정상 요청의 응답(상태 코드, 메시지)은 전환 전과 동일하게 유지해 클라이언트 영향 없음
-- 주의한 점: `@Component` 필터의 서블릿 필터 중복 등록 방지, `/error` 경로 허용(막으면 400이 401로 바뀜), `hasRole`의 `ROLE_` 접두사
-
-### 2. 1GB 서버의 메모리·디스크 한계 → 빌드와 실행 분리
-
-EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로도 빠듯해, 서버에서 Gradle로 이미지까지 빌드하기엔 메모리와 디스크가 부족했습니다. 서버를 키우는 대신 **빌드는 GitHub Actions에서 하고 서버는 GHCR에서 이미지를 받아 실행만** 하도록 분리했고, 이 구조가 그대로 자동 배포(CD)로 이어졌습니다. 개발 Mac(ARM)과 서버(x86_64)의 CPU 아키텍처가 달라 이미지는 `linux/amd64`로 빌드합니다.
-
-### 3. 컨테이너에서 `createdAt`이 실제보다 9시간 이른 시각으로 저장
-
-로컬에서 운영과 같은 구성을 Docker Compose로 띄워 검증하던 중, 12시에 등록한 제보의 시각이 03시로 저장되는 것을 발견했습니다. 컨테이너의 기본 시간대가 UTC라 `LocalDateTime.now()`가 UTC 기준이었기 때문으로, 앱 컨테이너에 `TZ=Asia/Seoul`을 지정해 해결했습니다. 배포 전에 운영과 같은 환경을 먼저 띄워 본 덕분에 운영 데이터가 틀어지기 전에 잡았습니다.
-
-### 4. 브라우저에서 JSON 한글이 깨져 보임
-
-응답 데이터는 정상 UTF-8이었지만 `Content-Type: application/json`에 charset이 없어 일부 브라우저가 다른 인코딩으로 해석했습니다. `server.servlet.encoding.force: true`로 `charset=UTF-8`을 명시해 해결했습니다.
-
-### 5. Refresh Token이 Access Token으로도 사용됨
-
-코드 리뷰에서 **Refresh Token(3일)을 `Authorization` 헤더에 넣어도 로그인이 필요한 API가 통과**한다는 지적을 받았습니다. Access Token을 15분으로 짧게 둔 의미가 없어지고, Refresh Token이 유출되면 3일 동안 API를 마음대로 호출할 수 있는 상태였습니다.
-
-| 요청 | 수정 전 | 수정 후 |
-|---|---|---|
-| Refresh Token으로 `POST /api/reports` | **201 — 인증 통과** | 401 |
-| Access Token으로 `POST /api/users/recreate` | 400 (Redis 값 비교에서 거절) | 400 (토큰 종류 검사에서 거절) |
-
-- **원인**: 두 토큰을 같은 형태(subject + 만료시간)로 만들고, `validateToken`은 서명과 만료만 확인 → 서버가 두 토큰을 구분할 방법이 없었음
-- **해결**: 발급 시 `type` claim(`access` / `refresh`)을 넣고, `validateToken(token, expectedType)`이 종류까지 확인. 필터는 `ACCESS`, 재발급은 `REFRESH`만 허용 (두 호출부가 같은 함수를 지나가므로 한 곳만 수정)
-- **배운 점**: "서명이 유효하다"와 "이 용도로 써도 된다"는 다른 검사. 같은 키로 서명하는 토큰이 여러 종류면 용도를 토큰 안에 명시해야 함
-
-### 6. 일반 회원이 다른 회원의 이메일을 조회할 수 있음 (IDOR)
-
-`GET /api/users/{id}`가 로그인 여부만 확인해서, 일반 회원이 `id`를 1, 2, 3… 순서대로 바꿔가며 **전체 회원의 이메일을 조회**할 수 있었습니다.
-
-| 요청 | 수정 전 | 수정 후 |
-|---|---|---|
-| USER 토큰으로 `GET /api/users/2` (다른 회원) | **200 — 이메일 노출** | 경로 삭제 |
-| USER 토큰으로 `GET /api/admin/users/2` | — | 403 |
-| ADMIN 토큰으로 `GET /api/admin/users/2` | — | 200 |
-
-- **원인**: 원래 관리자가 회원을 조회하려고 만든 API인데 `/api/users/**`에 있어서 `anyRequest().authenticated()`(로그인만 확인) 규칙이 적용됨
-- **해결**: `/api/admin/users/{id}`로 옮겨 기존 `/api/admin/**` → `hasRole("ADMIN")` 규칙을 그대로 적용. 관리자 API는 `AdminController` 하나로 모아, 새 관리자 기능도 같은 규칙을 자동으로 받게 함
-- **배운 점**: "로그인했는가(인증)"와 "이 데이터를 볼 권한이 있는가(인가)"는 별개. API를 만들 때 경로가 어떤 접근 규칙에 걸리는지 함께 확인해야 함
-
-## 테스트
-
-단위 테스트 + MockMvc 통합 테스트 **36개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
-
-| 테스트 | 확인하는 것 |
-|---|---|
-| `UserServiceTest` | 회원가입·로그인·토큰 재발급 성공/실패 |
-| `JwtTokenProviderTest` | 토큰 생성·검증·만료, 다른 종류(access/refresh) 토큰 거절 |
-| `JwtAuthFilterTest` | 유효한 토큰일 때만 SecurityContext에 사용자·권한 등록 |
-| `ReportServiceTest` | 승인 시 Marker 저장, 거절 시 저장 안 함, 재승인 차단 |
-| `MarkerServiceTest` | 없는 마커 조회 시 404 |
-| `SecurityConfigTest` | URL별 접근 규칙(공개/401/403/통과), 세미콜론 주소 우회 차단, 회원 조회 관리자 전용 |
-
-## 향후 개선
-
-- Swagger UI에 JWT 인증(Authorize) 설정 — 로그인이 필요한 API도 브라우저에서 바로 호출 가능하게
-- 도메인 연결 + HTTPS (현재는 IP·HTTP라 토큰이 평문 전송됨)
-- 예외별 상태 코드 세분화 (로그인 실패 401, 중복 이메일·이미 처리된 제보 409)
-- 제보 남용 방지를 위한 Rate Limiting
+- [ ] Swagger UI에 JWT 인증(Authorize) 설정: 로그인이 필요한 API도 브라우저에서 바로 호출
+- [ ] 도메인 연결 + HTTPS (현재는 IP·HTTP라 토큰이 평문 전송됨)
+- [ ] 예외별 상태 코드 세분화 (로그인 실패 401, 중복 이메일·이미 처리된 제보 409)
+- [ ] 제보 남용 방지를 위한 Rate Limiting
+- [ ] N+1 쿼리 수를 고정하는 회귀 테스트
