@@ -25,7 +25,7 @@ public class MarkerController {
         return ResponseEntity.ok(markerService.getMarkerDetail(id));
     }
 
-    // 사용자 위치 기준 반경 내 마커 조회 (전체 목록 조회를 대체)
+    // 지정한 위치(lat, lng) 기준 반경 내 마커 조회 (전체 목록 조회를 대체)
     // 파라미터 검증은 Spring 6.1 기본 메서드 검증이 처리 → 실패 시 GlobalExceptionHandler가 400 JSON으로 응답
     // (클래스에 @Validated를 붙이면 AOP 방식 ConstraintViolationException으로 바뀌어 500 처리되므로 붙이지 않음)
     @GetMapping
