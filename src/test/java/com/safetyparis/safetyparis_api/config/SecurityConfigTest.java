@@ -55,9 +55,12 @@ class SecurityConfigTest {
     }
 
     @Test
-    @DisplayName("공개 경로 - 마커 목록/상세는 로그인 없이 조회 가능")
+    @DisplayName("공개 경로 - 마커 반경 조회(쿼리 파라미터 포함)/상세는 로그인 없이 조회 가능")
     void publicPaths_noLogin_ok() throws Exception {
-        mockMvc.perform(get("/api/markers")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/markers").param("lat", "48.8566").param("lng", "2.3522"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/markers").param("lat", "48.8566").param("lng", "2.3522").param("radius", "1000"))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/markers/1")).andExpect(status().isOk());
     }
 
