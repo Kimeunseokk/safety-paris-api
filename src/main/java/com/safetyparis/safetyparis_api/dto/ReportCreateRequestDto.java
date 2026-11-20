@@ -2,6 +2,8 @@ package com.safetyparis.safetyparis_api.dto;
 
 import com.safetyparis.safetyparis_api.entity.Report;
 import com.safetyparis.safetyparis_api.entity.User;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -15,10 +17,15 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class ReportCreateRequestDto {
 
+    // 좌표 범위는 반경 조회 API와 동일 - 범위 밖 좌표가 승인돼 마커가 되면 ST_Distance_Sphere가 범위 오류를 내므로 입력 단계에서 막음
     @NotNull(message = "위도는 필수입니다")
+    @DecimalMin(value = "-90", message = "위도는 -90~90 범위여야 합니다")
+    @DecimalMax(value = "90", message = "위도는 -90~90 범위여야 합니다")
     private Double latitude;
 
     @NotNull(message = "경도는 필수입니다")
+    @DecimalMin(value = "-180", message = "경도는 -180~180 범위여야 합니다")
+    @DecimalMax(value = "180", message = "경도는 -180~180 범위여야 합니다")
     private Double longitude;
 
     // 인상착의 - 기억 못 할 수 있어 전부 선택 입력
