@@ -13,7 +13,7 @@
 - **API 기본 주소**: `http://13.209.19.229:8080` (루트 `/`는 API가 없어 401 응답 — 아래 공개 API로 확인)
 - **API 문서 (Swagger UI)**: http://13.209.19.229:8080/swagger-ui/index.html — 브라우저에서 전체 API 명세를 보고 직접 호출 가능 (서버 중지 중)
 - 바로 확인해 볼 수 있는 공개 API (로그인 불필요)
-  - 마커 목록: http://13.209.19.229:8080/api/markers
+  - 반경 내 마커: http://13.209.19.229:8080/api/markers?lat=48.8566&lng=2.3522&radius=3000
   - 마커 상세: http://13.209.19.229:8080/api/markers/1
   - 도움기관 목록: http://13.209.19.229:8080/api/help-locations
 - 운영 DB의 마커는 실제 흐름(회원가입 → 제보 → 관리자 승인)으로 만든 **예시 데이터**입니다 (`[예시]` 표시)
@@ -26,7 +26,7 @@
 |---|---|---|
 | User | 회원. `role`(`USER`/`ADMIN`)로 일반/관리자 구분 | 회원가입(BCrypt), 로그인(JWT Access/Refresh), 토큰 재발급(Redis 대조), 회원 조회 |
 | Report | 사용자가 보낸 원본 제보 (승인 전 `PENDING`) | 제보 등록(로그인 회원만), 관리자 대기 목록·승인·거절 |
-| Marker | 관리자가 승인해 지도에 노출되는 범죄 지점 | 목록·상세 조회(로그인 불필요), 목록은 Redis 캐싱 |
+| Marker | 관리자가 승인해 지도에 노출되는 범죄 지점 | 사용자 위치 기준 반경 내 조회·상세 조회(로그인 불필요) |
 | HelpLocation | 대사관·경찰서 등 도움받을 수 있는 기관 | 목록 조회(로그인 불필요) |
 
 - 인상착의 필드는 전부 선택 입력 — 피해자가 기억하지 못할 수 있음을 고려
@@ -38,7 +38,7 @@
 |---|---|
 | Language / Framework | Java 21, Spring Boot 3.3.0, Spring Web, Spring Data JPA |
 | 보안 | Spring Security (JWT 인증 필터, URL별 접근 제어), JWT (jjwt), BCrypt |
-| DB / Cache | MySQL, Redis (Refresh Token 저장, 마커 목록 캐싱), Flyway (스키마·기준 데이터 버전 관리) |
+| DB / Cache | MySQL (반경 조회: 위도·경도 인덱스 + `ST_Distance_Sphere`), Redis (Refresh Token 저장), Flyway (스키마·기준 데이터 버전 관리) |
 | 테스트 | JUnit 5, Mockito, AssertJ, MockMvc, spring-security-test |
 | 인프라 / 배포 | Docker, Docker Compose, AWS EC2, GitHub Actions (CI/CD), GHCR |
 | API 문서 | springdoc-openapi (Swagger UI) |
@@ -90,7 +90,7 @@ docker compose up -d --build
 | 로그인 | POST | `/api/users/login` | 불필요 |
 | 토큰 재발급 | POST | `/api/users/recreate` | 불필요 (Refresh Token 제출) |
 | 회원 조회 | GET | `/api/admin/users/{id}` | 관리자 |
-| 마커 목록 | GET | `/api/markers` | 불필요 |
+| 반경 내 마커 | GET | `/api/markers?lat={위도}&lng={경도}&radius={미터}` | 불필요 |
 | 마커 상세 | GET | `/api/markers/{id}` | 불필요 |
 | 도움기관 목록 | GET | `/api/help-locations` | 불필요 |
 | 제보 등록 | POST | `/api/reports` | 로그인 |
@@ -144,6 +144,13 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
 { "reportId": 1, "status": "PENDING", "createdAt": "2026-10-07T16:32:57" }
 ```
 
+**반경 내 마커** — `GET /api/markers?lat=48.8566&lng=2.3522&radius=3000`
+- `lat`(-90~90), `lng`(-180~180) 필수, `radius`는 선택(기본 3000, 최대 5000m)
+- 범위를 벗어나거나 누락되면 400 `{"message": "잘못된 요청입니다."}`
+```json
+[{ "id": 1, "latitude": 48.8584, "longitude": 2.2945, "createdAt": "2026-10-07T16:32:57" }]
+```
+
 **마커 상세** — `GET /api/markers/{id}`
 ```json
 {
@@ -168,7 +175,10 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
 - **승인은 하나의 트랜잭션**: 상태 변경(`APPROVED`)과 Marker 생성을 한 트랜잭션으로 묶어 어긋난 데이터가 생기지 않게 함
 - **중복 승인 방지**: `Report.approve()`/`reject()`가 `PENDING`일 때만 상태를 바꾸도록 엔티티에서 검사 → 같은 제보를 두 번 승인해도 마커가 중복 생성되지 않음
 - **로그인 필수 제보**: 익명 제보 대신 작성자를 남겨 장난성 제보 추적 가능 (장난성 제보는 관리자 거절로 처리)
-- **마커 목록 캐싱**: 모든 사용자가 지도를 열 때마다 조회하지만 관리자 승인 때만 바뀌는 데이터라 Redis에 캐싱(`@Cacheable`), 승인 시 `@CacheEvict`로 무효화
+- **마커 목록 캐싱 → 반경 조회로 바꾸며 제거**: 처음에는 전체 마커 목록을 모든 사용자가 똑같이 조회하고 관리자 승인 때만 바뀌어서 Redis에 캐싱(`@Cacheable`)하고 승인 시 `@CacheEvict`로 무효화했음. 사용자 위치 기준 반경 조회로 바꾸면서 결과가 위치(`lat`, `lng`, `radius`)마다 달라져 같은 키가 다시 요청될 일이 거의 없어(캐시 적중률 ≈ 0) 캐시를 제거하고, 대신 인덱스로 조회 자체를 빠르게 함. Redis는 Refresh Token 저장에 계속 사용
+- **PostGIS 대신 MySQL로 반경 조회**: 서비스 범위가 파리 한 도시라 마커 수가 많지 않고, 필요한 기능은 "반경 내 점 찾기" 하나라 MySQL 8의 `ST_Distance_Sphere`로 충분함. PostgreSQL로 바꾸면 DB 이전·Flyway 스크립트·1GB 서버의 운영 부담이 늘어나므로 기존 MySQL에 인덱스만 추가
+- **반경 조회는 2단계 필터**: ① 원을 감싸는 사각형으로 `latitude/longitude BETWEEN` → `(latitude, longitude)` 인덱스로 후보만 읽음 ② 후보만 `ST_Distance_Sphere`로 실제 거리를 계산해 원 밖(사각형 모서리) 제거. 거리 함수만 쓰면 모든 행을 계산해야 해서 인덱스를 못 탐
+- **사각형과 거리 함수의 지구 반지름 기준 통일**: 흔히 쓰는 근사값(위도 1도 = 111,320m)으로 사각형을 만들면, `ST_Distance_Sphere`의 기준(반지름 6,370,986m → 1도 ≈ 111,195m)보다 사각형이 작아져 동서남북 경계 근처(3km 조회 시 약 3.4m 폭) 마커가 누락될 수 있었음 → 같은 반지름 상수로 통일하고, 정북·정동 2,998m 마커가 조회되는 경계 테스트로 고정
 - **관리자 계정**: 일반 회원가입 후 DB에서 role을 직접 변경해 지정 — 회원가입으로 관리자가 될 수 없게 함
 - **role은 DB에서 조회**: JWT에 role을 넣지 않고 인증된 요청마다 DB에서 조회 → 권한 변경이 즉시 반영됨 (트래픽이 많아지면 JWT에 포함 고려)
 - **운영은 `ddl-auto: validate` + Flyway**: 앱이 운영 테이블을 임의로 바꾸지 않고, 스키마 변경 이력을 SQL 파일로 관리
@@ -245,7 +255,7 @@ EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로
 
 ## 테스트
 
-단위 테스트 + MockMvc 통합 테스트 **36개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
+단위 테스트 + MockMvc·DB 통합 테스트 **47개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
 
 | 테스트 | 확인하는 것 |
 |---|---|
@@ -253,7 +263,8 @@ EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로
 | `JwtTokenProviderTest` | 토큰 생성·검증·만료, 다른 종류(access/refresh) 토큰 거절 |
 | `JwtAuthFilterTest` | 유효한 토큰일 때만 SecurityContext에 사용자·권한 등록 |
 | `ReportServiceTest` | 승인 시 Marker 저장, 거절 시 저장 안 함, 재승인 차단 |
-| `MarkerServiceTest` | 없는 마커 조회 시 404 |
+| `MarkerServiceTest` | 없는 마커 조회 시 404, 반경 조회 사각형 범위 계산 |
+| `MarkerRadiusQueryTest` | 실제 MySQL로 반경 조회 — 1/2.9km 포함·3.1/10km 제외, 사각형 모서리 제외, 정북·정동 2,998m 경계 포함 |
 | `SecurityConfigTest` | URL별 접근 규칙(공개/401/403/통과), 세미콜론 주소 우회 차단, 회원 조회 관리자 전용 |
 
 ## 향후 개선
