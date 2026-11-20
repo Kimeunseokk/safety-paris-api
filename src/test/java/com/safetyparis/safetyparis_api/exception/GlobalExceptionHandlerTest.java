@@ -90,13 +90,15 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("반경 조회 파라미터 오류(lat 누락, 범위 밖, radius 5001, 숫자 아님) - 400 + JSON 메시지")
+    @DisplayName("반경 조회 파라미터 오류(lat 누락, 범위 밖, radius 0·음수·5001, 숫자 아님) - 400 + JSON 메시지")
     void markerRadiusParams_invalid_400_json() throws Exception {
         String[][] invalidParams = {
                 {"lng", "2.35"},                                  // lat 누락
                 {"lat", "91", "lng", "2.35"},                     // 위도 범위 밖
                 {"lat", "48.85", "lng", "-181"},                  // 경도 범위 밖
                 {"lat", "48.85", "lng", "2.35", "radius", "5001"}, // 최대 반경 초과
+                {"lat", "48.85", "lng", "2.35", "radius", "0"},    // 반경 0
+                {"lat", "48.85", "lng", "2.35", "radius", "-1"},   // 음수 반경
                 {"lat", "abc", "lng", "2.35"},                    // 숫자 아님
         };
         for (String[] params : invalidParams) {

@@ -6,6 +6,7 @@ import com.safetyparis.safetyparis_api.service.MarkerService;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,7 +32,7 @@ public class MarkerController {
     public ResponseEntity<List<MarkerListResponseDto>> markerList(
             @RequestParam @DecimalMin("-90") @DecimalMax("90") double lat,
             @RequestParam @DecimalMin("-180") @DecimalMax("180") double lng,
-            @RequestParam(defaultValue = "3000") @Max(5000) int radius) {
+            @RequestParam(defaultValue = "3000") @Positive @Max(5000) int radius) {
         return ResponseEntity.ok(markerService.getMarkersWithinRadius(lat, lng, radius));
     }
 }
