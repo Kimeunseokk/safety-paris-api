@@ -24,8 +24,9 @@ public class ReportCreateRequestDto {
     private Double latitude;
 
     @NotNull(message = "경도는 필수입니다")
-    @DecimalMin(value = "-180", message = "경도는 -180~180 범위여야 합니다")
-    @DecimalMax(value = "180", message = "경도는 -180~180 범위여야 합니다")
+    // 경도 -180은 제외: ST_Distance_Sphere가 경도를 (-180, 180]만 받음
+    @DecimalMin(value = "-180", inclusive = false, message = "경도는 -180 초과 180 이하여야 합니다")
+    @DecimalMax(value = "180", message = "경도는 -180 초과 180 이하여야 합니다")
     private Double longitude;
 
     // 인상착의 - 기억 못 할 수 있어 전부 선택 입력

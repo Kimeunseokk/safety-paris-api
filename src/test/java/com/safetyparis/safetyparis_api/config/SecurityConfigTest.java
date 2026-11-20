@@ -83,13 +83,18 @@ class SecurityConfigTest {
     }
 
     @Test
-    @DisplayName("제보 등록 - 위도 95(범위 밖)면 400 + DTO 메시지, 서비스는 호출되지 않음")
+    @DisplayName("제보 등록 - 위도 95, 경도 -180(범위 밖)이면 400 + DTO 메시지, 서비스는 호출되지 않음")
     void createReport_latitudeOutOfRange_400() throws Exception {
         mockMvc.perform(post("/api/reports").with(loginAs("reporter@test.com", "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(REPORT_JSON.replace("48.85", "95")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("위도는 -90~90 범위여야 합니다"));
+        mockMvc.perform(post("/api/reports").with(loginAs("reporter@test.com", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REPORT_JSON.replace("2.29", "-180")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("경도는 -180 초과 180 이하여야 합니다"));
 
         verify(reportService, never()).createReport(any(), any());
     }

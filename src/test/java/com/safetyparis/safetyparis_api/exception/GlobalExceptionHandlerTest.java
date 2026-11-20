@@ -96,6 +96,7 @@ class GlobalExceptionHandlerTest {
                 {"lng", "2.35"},                                  // lat 누락
                 {"lat", "91", "lng", "2.35"},                     // 위도 범위 밖
                 {"lat", "48.85", "lng", "-181"},                  // 경도 범위 밖
+                {"lat", "48.85", "lng", "-180"},                  // 경도 -180 (ST_Distance_Sphere 허용 범위 (-180, 180] 밖)
                 {"lat", "48.85", "lng", "2.35", "radius", "5001"}, // 최대 반경 초과
                 {"lat", "48.85", "lng", "2.35", "radius", "0"},    // 반경 0
                 {"lat", "48.85", "lng", "2.35", "radius", "-1"},   // 음수 반경
@@ -111,6 +112,10 @@ class GlobalExceptionHandlerTest {
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.message").value("잘못된 요청입니다."));
         }
+
+        // 경도 180은 ST_Distance_Sphere 허용 범위라 통과
+        mockMvc.perform(get("/api/markers").param("lat", "48.85").param("lng", "180"))
+                .andExpect(status().isOk());
     }
 
     @Test
