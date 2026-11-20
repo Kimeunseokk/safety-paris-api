@@ -55,9 +55,12 @@ class SecurityConfigTest {
     }
 
     @Test
-    @DisplayName("공개 경로 - 마커 목록/상세는 로그인 없이 조회 가능")
+    @DisplayName("공개 경로 - 마커 반경 조회(쿼리 파라미터 포함)/상세는 로그인 없이 조회 가능")
     void publicPaths_noLogin_ok() throws Exception {
-        mockMvc.perform(get("/api/markers")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/markers").param("lat", "48.8566").param("lng", "2.3522"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/markers").param("lat", "48.8566").param("lng", "2.3522").param("radius", "1000"))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/markers/1")).andExpect(status().isOk());
     }
 
@@ -77,6 +80,23 @@ class SecurityConfigTest {
                 .andExpect(status().isCreated());
 
         verify(reportService).createReport(eq("reporter@test.com"), any());
+    }
+
+    @Test
+    @DisplayName("제보 등록 - 위도 95, 경도 -180(범위 밖)이면 400 + DTO 메시지, 서비스는 호출되지 않음")
+    void createReport_latitudeOutOfRange_400() throws Exception {
+        mockMvc.perform(post("/api/reports").with(loginAs("reporter@test.com", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REPORT_JSON.replace("48.85", "95")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("위도는 -90~90 범위여야 합니다"));
+        mockMvc.perform(post("/api/reports").with(loginAs("reporter@test.com", "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(REPORT_JSON.replace("2.29", "-180")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("경도는 -180 초과 180 이하여야 합니다"));
+
+        verify(reportService, never()).createReport(any(), any());
     }
 
     @Test

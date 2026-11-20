@@ -90,6 +90,35 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("반경 조회 파라미터 오류(lat 누락, 범위 밖, radius 0·음수·5001, 숫자 아님) - 400 + JSON 메시지")
+    void markerRadiusParams_invalid_400_json() throws Exception {
+        String[][] invalidParams = {
+                {"lng", "2.35"},                                  // lat 누락
+                {"lat", "91", "lng", "2.35"},                     // 위도 범위 밖
+                {"lat", "48.85", "lng", "-181"},                  // 경도 범위 밖
+                {"lat", "48.85", "lng", "-180"},                  // 경도 -180 (ST_Distance_Sphere 허용 범위 (-180, 180] 밖)
+                {"lat", "48.85", "lng", "2.35", "radius", "5001"}, // 최대 반경 초과
+                {"lat", "48.85", "lng", "2.35", "radius", "0"},    // 반경 0
+                {"lat", "48.85", "lng", "2.35", "radius", "-1"},   // 음수 반경
+                {"lat", "abc", "lng", "2.35"},                    // 숫자 아님
+        };
+        for (String[] params : invalidParams) {
+            var request = get("/api/markers");
+            for (int i = 0; i < params.length; i += 2) {
+                request.param(params[i], params[i + 1]);
+            }
+            mockMvc.perform(request)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.message").value("잘못된 요청입니다."));
+        }
+
+        // 경도 180은 ST_Distance_Sphere 허용 범위라 통과
+        mockMvc.perform(get("/api/markers").param("lat", "48.85").param("lng", "180"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("없는 주소 - 404 + JSON 메시지 (이전엔 Spring 기본 형식)")
     void unknownPath_404_json() throws Exception {
         mockMvc.perform(get("/api/users/2"))

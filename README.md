@@ -24,8 +24,9 @@
 |---|---|---|
 | 🔐 보안 | 인증·인가 취약점 3건 재현 및 수정 | 관리자 경로 우회 · Refresh Token 오용 · IDOR 차단 |
 | ⚡ 성능 | 관리자 대기 목록 N+1 쿼리 개선 | 요청당 SQL **13회 → 2회** |
-| ⚡ 성능 | 마커 목록 Redis 캐싱 | 평균 응답 **8.95ms → 3.52ms** (약 60% 단축), 처리량 약 2.5배 |
-| ✅ 품질 | 단위·통합 테스트를 CI에서 자동 실행 | 테스트 **42개** |
+| ⚡ 성능 | 마커 목록 Redis 캐싱 (반경 조회 전환 시 제거) | 평균 응답 **8.95ms → 3.52ms** (약 60% 단축), 처리량 약 2.5배 |
+| 🗺 위치 | 전체 마커 목록 → 지정한 위치(lat, lng) 기준 반경 내 조회 | 인덱스 사각형 필터 + `ST_Distance_Sphere` 2단계, 경계 누락 테스트로 고정 |
+| ✅ 품질 | 단위·통합 테스트를 CI에서 자동 실행 | 테스트 **48개** |
 | 🚀 배포 | GitHub Actions → GHCR → EC2 자동 배포 | 1GB 서버 제약에 맞춰 빌드와 실행 분리 |
 
 <br>
@@ -55,22 +56,20 @@ sequenceDiagram
     actor A as 관리자
     participant API as Safety-Paris API
     participant DB as MySQL
-    participant C as Redis
 
     U->>API: POST /api/reports (제보)
     API->>DB: Report 저장 (PENDING)
     A->>API: PATCH /api/admin/reports/{id}/approve
     API->>DB: Report → APPROVED, Marker 생성 (한 트랜잭션)
-    API->>C: 마커 목록 캐시 무효화
-    U->>API: GET /api/markers (지도 조회)
-    API->>C: 캐시 조회 (없으면 DB에서 읽어 저장)
+    U->>API: GET /api/markers?lat&lng&radius (지정한 위치 기준 지도 조회)
+    API->>DB: 사각형 BETWEEN(인덱스) → ST_Distance_Sphere로 원 밖 제거
 ```
 
 | 도메인 | 설명 | 기능 |
 |---|---|---|
 | **User** | 회원. `role`(`USER`/`ADMIN`)로 일반/관리자 구분 | 회원가입(BCrypt), 로그인(JWT Access/Refresh), 토큰 재발급(Redis 대조), 회원 조회(관리자) |
 | **Report** | 사용자가 보낸 원본 제보 (승인 전 `PENDING`) | 제보 등록(로그인 회원만), 관리자 대기 목록·승인·거절 |
-| **Marker** | 관리자가 승인해 지도에 노출되는 범죄 지점 | 목록·상세 조회(로그인 불필요), 목록은 Redis 캐싱 |
+| **Marker** | 관리자가 승인해 지도에 노출되는 범죄 지점 | 지정한 위치(`lat`, `lng`) 기준 반경 내 조회·상세 조회(로그인 불필요) |
 | **HelpLocation** | 대사관·경찰서 등 도움받을 수 있는 기관 | 목록 조회(로그인 불필요) |
 
 - 인상착의 필드는 전부 선택 입력: 피해자가 기억하지 못할 수 있음을 고려
@@ -120,7 +119,7 @@ flowchart LR
 |---|---|
 | Language / Framework | Java 21, Spring Boot 3.3.0, Spring Web, Spring Data JPA |
 | 보안 | Spring Security (JWT 인증 필터, URL별 접근 제어), JWT (jjwt), BCrypt |
-| DB / Cache | MySQL, Redis (Refresh Token 저장, 마커 목록 캐싱), Flyway |
+| DB / Cache | MySQL (반경 조회: 위도·경도 인덱스 + `ST_Distance_Sphere`), Redis (Refresh Token 저장), Flyway |
 | 테스트 | JUnit 5, Mockito, AssertJ, MockMvc, spring-security-test |
 | 인프라 / 배포 | Docker, Docker Compose, AWS EC2, GitHub Actions (CI/CD), GHCR |
 | API 문서 | springdoc-openapi (Swagger UI) |
@@ -136,7 +135,12 @@ flowchart LR
 | **승인은 하나의 트랜잭션** | 상태 변경(`APPROVED`)과 Marker 생성을 묶어 어긋난 데이터가 생기지 않게 함 |
 | **중복 승인 방지** | `Report.approve()`/`reject()`가 `PENDING`일 때만 상태를 바꿈 → 같은 제보를 두 번 승인해도 마커가 중복 생성되지 않음 |
 | **로그인 필수 제보** | 익명 대신 작성자를 남겨 장난성 제보를 추적 (장난성 제보는 관리자 거절로 처리) |
-| **마커 목록 캐싱** | 지도를 열 때마다 조회하지만 승인 때만 바뀌는 데이터 → `@Cacheable`로 캐싱, 승인 시 `@CacheEvict`로 무효화 |
+| **마커 목록 캐싱 → 반경 조회로 바꾸며 제거** | 전체 목록일 때는 모두가 같은 결과를 조회하고 승인 때만 바뀌어 `@Cacheable`/`@CacheEvict`로 캐싱([성능 개선](#-성능-개선)). 반경 조회로 바꾸면서 결과가 위치(`lat`, `lng`, `radius`)마다 달라져 같은 키가 다시 요청될 일이 거의 없어(적중률 ≈ 0) 제거하고, 인덱스로 조회 자체를 빠르게 함. Redis는 Refresh Token 저장에 계속 사용 |
+| **PostGIS 대신 MySQL로 반경 조회** | 서비스 범위가 파리 한 도시이고 필요한 기능은 "반경 내 점 찾기" 하나라 MySQL 8의 `ST_Distance_Sphere`로 충분. PostgreSQL로 바꾸면 DB 이전·Flyway 스크립트·1GB 서버의 운영 부담이 늘어 기존 MySQL에 인덱스만 추가 |
+| **위치 획득은 클라이언트 책임** | 서버는 좌표만 받아 조회. 현재 위치, 지도 중심, 검색한 장소 모두 같은 API로 처리하고, 위치 정보는 서버에 저장하지 않음 |
+| **반경 조회는 2단계 필터** | ① 원을 감싸는 사각형으로 `latitude/longitude BETWEEN` → `(latitude, longitude)` 인덱스로 후보만 읽음 ② 후보만 `ST_Distance_Sphere`로 실제 거리를 계산해 원 밖(사각형 모서리) 제거. 거리 함수만 쓰면 모든 행을 계산해야 해 인덱스를 못 탐 |
+| **사각형과 거리 함수의 지구 반지름 기준 통일** | 흔히 쓰는 근사값(위도 1도 = 111,320m)으로 사각형을 만들면 `ST_Distance_Sphere`의 기준(반지름 6,370,986m → 1도 ≈ 111,195m)보다 사각형이 작아져 동서남북 경계 근처(3km 조회 시 약 3.4m 폭) 마커가 누락될 수 있었음 → 같은 반지름 상수로 통일, 정북·정동 2,998m 마커가 조회되는 경계 테스트로 고정 |
+| **좌표는 입력 단계에서 범위 검증** | 반경 조회 파라미터와 제보 등록 좌표 모두 위도 -90~90, 경도 -180 초과~180 이하. `ST_Distance_Sphere`가 받는 범위와 같게 맞춰(경도 -180은 180과 같은 날짜변경선이라 MySQL이 거부), 범위 밖 좌표가 마커가 되어 조회 중 오류가 나지 않도록 저장 전에 400으로 차단 |
 | **관리자 계정은 DB에서 지정** | 일반 회원가입 후 DB에서 role 변경 → 회원가입으로 관리자가 될 수 없게 함 |
 | **role은 요청마다 DB에서 조회** | JWT에 role을 넣지 않아 권한 변경이 즉시 반영됨. 트래픽이 커지면 role을 JWT에 넣고 Redis 블랙리스트로 변경을 반영하는 방식을 고려 |
 | **운영은 `validate` + Flyway** | 앱이 운영 테이블을 임의로 바꾸지 않고, 스키마 변경 이력을 SQL 파일로 관리 |
@@ -273,7 +277,7 @@ EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로
 </details>
 
 <details>
-<summary><b>마커 목록 Redis 캐싱: 평균 응답 8.95ms → 3.52ms</b></summary>
+<summary><b>마커 목록 Redis 캐싱: 평균 응답 8.95ms → 3.52ms (이후 반경 조회 전환으로 제거)</b></summary>
 <br>
 
 마커 목록은 모든 사용자가 지도를 열 때마다 조회하지만, 관리자 승인 때만 바뀝니다. 수정·삭제 API도 없어 캐시를 비워야 하는 시점이 승인 하나뿐이라 `@Cacheable("markers")`로 캐싱하고, 승인 시 `@CacheEvict(allEntries = true)`로 무효화했습니다.
@@ -288,13 +292,15 @@ EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로
 - 두 상태 모두 회차가 갈수록 빨라졌습니다. JVM JIT 최적화가 워밍업 100건으로 끝나지 않은 영향으로 보고, 3회 평균으로 비교했습니다.
 - 아직 검증하지 않은 것: 운영 서버(EC2)에서의 측정, 조회와 승인이 동시에 일어날 때 옛 목록이 캐시에 저장될 수 있는 경합
 
+**이후: 반경 조회로 바꾸며 캐시 제거** — 지도 조회를 전체 목록에서 지정한 위치(`lat`, `lng`) 기준 반경(`radius`) 조회로 바꾸면서, 캐시 키가 위치마다 달라져 적중할 일이 거의 없어졌습니다. 캐시를 유지하면 Redis 왕복 비용과 위치 조합별 키만 쌓여 `@Cacheable`/`@CacheEvict`를 제거하고, 대신 `(latitude, longitude)` 인덱스로 필요한 범위만 읽도록 했습니다 ([설계 결정](#-설계-결정)).
+
 </details>
 
 <br>
 
 ## 🧪 테스트
 
-단위 테스트 + MockMvc 통합 테스트 **42개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
+단위 테스트 + MockMvc·DB 통합 테스트 **48개**, push마다 GitHub Actions에서 자동 실행됩니다. 자세한 작성 방식은 [`TESTING.md`](TESTING.md) 참고.
 
 | 테스트 | 확인하는 것 |
 |---|---|
@@ -302,9 +308,10 @@ EC2(메모리 1GB, 디스크 8GB)는 앱·MySQL·Redis를 띄우는 것만으로
 | `JwtTokenProviderTest` | 토큰 생성·검증·만료, 다른 종류(access/refresh) 토큰 거절 |
 | `JwtAuthFilterTest` | 유효한 토큰일 때만 SecurityContext에 사용자·권한 등록 |
 | `ReportServiceTest` | 승인 시 Marker 저장, 거절 시 저장 안 함, 재승인 차단 |
-| `MarkerServiceTest` | 없는 마커 조회 시 404 |
-| `SecurityConfigTest` | URL별 접근 규칙(공개/401/403/통과), 세미콜론 주소 우회 차단, 회원 조회 관리자 전용 |
-| `GlobalExceptionHandlerTest` | 예외별 JSON 에러 응답 (400·404, 검증 실패 메시지, 깨진 JSON) |
+| `MarkerServiceTest` | 없는 마커 조회 시 404, 반경 조회 사각형 범위 계산 |
+| `MarkerRadiusQueryTest` | 실제 MySQL로 반경 조회: 1/2.9km 포함·3.1/10km 제외, 사각형 모서리 제외, 정북·정동 2,998m 경계 포함 |
+| `SecurityConfigTest` | URL별 접근 규칙(공개/401/403/통과), 세미콜론 주소 우회 차단, 회원 조회 관리자 전용, 범위 밖 좌표 제보 400 |
+| `GlobalExceptionHandlerTest` | 예외별 JSON 에러 응답 (400·404, 검증 실패 메시지, 깨진 JSON, 반경 조회 파라미터 오류) |
 
 <br>
 
@@ -336,7 +343,7 @@ docker compose up -d --build
 | 로그인 | `POST` | `/api/users/login` | 불필요 |
 | 토큰 재발급 | `POST` | `/api/users/recreate` | 불필요 (Refresh Token 제출) |
 | 회원 조회 | `GET` | `/api/admin/users/{id}` | 관리자 |
-| 마커 목록 | `GET` | `/api/markers` | 불필요 |
+| 반경 내 마커 | `GET` | `/api/markers?lat={위도}&lng={경도}&radius={미터}` | 불필요 |
 | 마커 상세 | `GET` | `/api/markers/{id}` | 불필요 |
 | 도움기관 목록 | `GET` | `/api/help-locations` | 불필요 |
 | 제보 등록 | `POST` | `/api/reports` | 로그인 |
@@ -388,6 +395,13 @@ Refresh Token은 서명 검증뿐 아니라 Redis에 저장된 값과 완전히 
 }
 // Response 201
 { "reportId": 1, "status": "PENDING", "createdAt": "2026-10-07T16:32:57" }
+```
+
+**반경 내 마커** — `GET /api/markers?lat=48.8566&lng=2.3522&radius=3000`
+- `lat`(-90~90), `lng`(-180 초과~180) 필수, `radius`는 선택(기본 3000, 1~5000m)
+- 범위를 벗어나거나 누락되면 400 `{"message": "잘못된 요청입니다."}`
+```json
+[{ "id": 1, "latitude": 48.8584, "longitude": 2.2945, "createdAt": "2026-10-07T16:32:57" }]
 ```
 
 **마커 상세** — `GET /api/markers/{id}`
